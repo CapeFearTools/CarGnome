@@ -3,20 +3,24 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Used-car marketplace API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: listings
+    description: Vehicle listings
+  - name: leads
+    description: Lead capture
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +28,242 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /listings:
+    get:
+      operationId: getListings
+      tags: [listings]
+      summary: List active vehicle listings with optional filters
+      parameters:
+        - name: make
+          in: query
+          schema: { type: string }
+        - name: model
+          in: query
+          schema: { type: string }
+        - name: year_min
+          in: query
+          schema: { type: number }
+        - name: year_max
+          in: query
+          schema: { type: number }
+        - name: price_min
+          in: query
+          schema: { type: number }
+        - name: price_max
+          in: query
+          schema: { type: number }
+        - name: odometer_max
+          in: query
+          schema: { type: number }
+        - name: limit
+          in: query
+          schema: { type: number, default: 24 }
+        - name: offset
+          in: query
+          schema: { type: number, default: 0 }
+      responses:
+        "200":
+          description: Paginated listing results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListingsPage"
+
+  /listings/filters:
+    get:
+      operationId: getListingFilters
+      tags: [listings]
+      summary: Distinct filter options (makes, models, year/price/mileage ranges)
+      responses:
+        "200":
+          description: Filter options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListingFilters"
+
+  /listings/stats:
+    get:
+      operationId: getListingsStats
+      tags: [listings]
+      summary: Inventory counts and price summary
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListingsStats"
+
+  /listings/{vin}:
+    get:
+      operationId: getListing
+      tags: [listings]
+      summary: Get a single listing by VIN
+      parameters:
+        - name: vin
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Listing detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Listing"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /leads:
+    post:
+      operationId: createLead
+      tags: [leads]
+      summary: Submit a lead (inquiry or click-for-price)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadInput"
+      responses:
+        "201":
+          description: Lead created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
-        status:
-          type: string
-      required:
-        - status
+        status: { type: string }
 
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    Listing:
+      type: object
+      required: [id, vin, status]
+      properties:
+        id: { type: string }
+        vin: { type: string }
+        dealer_id: { type: ["string", "null"] }
+        stock_number: { type: ["string", "null"] }
+        year: { type: ["number", "null"] }
+        make: { type: ["string", "null"] }
+        model: { type: ["string", "null"] }
+        model_number: { type: ["string", "null"] }
+        body: { type: ["string", "null"] }
+        transmission: { type: ["string", "null"] }
+        series: { type: ["string", "null"] }
+        series_detail: { type: ["string", "null"] }
+        door_count: { type: ["number", "null"] }
+        odometer: { type: ["number", "null"] }
+        engine_cylinders: { type: ["number", "null"] }
+        engine_displacement: { type: ["string", "null"] }
+        engine: { type: ["string", "null"] }
+        drivetrain: { type: ["string", "null"] }
+        exterior_color: { type: ["string", "null"] }
+        interior_color: { type: ["string", "null"] }
+        msrp: { type: ["number", "null"] }
+        price: { type: ["number", "null"] }
+        certified: { type: ["boolean", "null"] }
+        description: { type: ["string", "null"] }
+        features: { type: ["string", "null"] }
+        photo_urls:
+          type: array
+          items: { type: string }
+        city_mpg: { type: ["number", "null"] }
+        highway_mpg: { type: ["number", "null"] }
+        vehicle_detail_link: { type: ["string", "null"] }
+        inventory_date: { type: ["string", "null"] }
+        photos_last_modified: { type: ["string", "null"] }
+        age: { type: ["number", "null"] }
+        status: { type: string }
+        created_at: { type: ["string", "null"] }
+        updated_at: { type: ["string", "null"] }
+
+    ListingsPage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Listing"
+        total: { type: number }
+        limit: { type: number }
+        offset: { type: number }
+
+    ListingFilters:
+      type: object
+      required: [makes, models]
+      properties:
+        makes:
+          type: array
+          items: { type: string }
+        models:
+          type: array
+          items: { type: string }
+        year_min: { type: ["number", "null"] }
+        year_max: { type: ["number", "null"] }
+        price_min: { type: ["number", "null"] }
+        price_max: { type: ["number", "null"] }
+        odometer_max: { type: ["number", "null"] }
+
+    ListingsStats:
+      type: object
+      required: [total]
+      properties:
+        total: { type: number }
+        certified_count: { type: number }
+        avg_price: { type: ["number", "null"] }
+        min_price: { type: ["number", "null"] }
+        max_price: { type: ["number", "null"] }
+        makes_count: { type: number }
+
+    LeadInput:
+      type: object
+      required: [lead_type, name, email, phone]
+      properties:
+        vin: { type: ["string", "null"] }
+        listing_id: { type: ["string", "null"] }
+        lead_type: { type: string, enum: [inquiry, click_for_price] }
+        name: { type: string, minLength: 1 }
+        email: { type: string }
+        phone: { type: string, minLength: 1 }
+        message: { type: ["string", "null"] }
+        vehicle_detail_link: { type: ["string", "null"] }
+
+    Lead:
+      type: object
+      required: [id, lead_type]
+      properties:
+        id: { type: string }
+        vin: { type: ["string", "null"] }
+        listing_id: { type: ["string", "null"] }
+        lead_type: { type: string }
+        name: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        message: { type: ["string", "null"] }
+        vehicle_detail_link: { type: ["string", "null"] }
+        created_at: { type: ["string", "null"] }

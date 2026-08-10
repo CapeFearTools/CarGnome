@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Used-Car Marketplace"
+description = "A public consumer-facing web app for browsing used-car inventory. Shoppers can search and filter active vehicle listings, view photo galleries and specs on detail pages, request pricing, and submit inquiries — all without logging in."
+version = "1.0.0"
+id = "artifacts/marketplace"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20787
+
+[services.development]
+run = "pnpm --filter @workspace/marketplace run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/marketplace", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/marketplace/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20787"
+BASE_PATH = "/"

@@ -8,57 +8,37 @@
  * Browser / Vite usage (react-vite frontend):
  *   import { createAnonClient } from '@workspace/supabase-client'
  *   const supabase = createAnonClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY)
+ *
+ * Note: clients are untyped (SupabaseClient<any>) — runtime type safety is
+ * provided by Zod schemas from @workspace/api-zod on the server and
+ * generated hooks on the frontend. Keeping the client untyped avoids
+ * complex PostgREST type inference issues with the Database generic.
  */
 
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import type { Dealer } from "@workspace/db";
-import type { Listing } from "@workspace/db";
-import type { Lead } from "@workspace/db";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-// ---------------------------------------------------------------------------
-// Database shape (used as the generic parameter for typed Supabase clients)
-// ---------------------------------------------------------------------------
-
-export interface Database {
-  public: {
-    Tables: {
-      dealers: {
-        Row: Dealer;
-        Insert: Partial<Dealer> & { dealer_id: string };
-        Update: Partial<Dealer>;
-      };
-      listings: {
-        Row: Listing;
-        Insert: Partial<Listing> & { vin: string; dealer_id: string };
-        Update: Partial<Listing>;
-      };
-      leads: {
-        Row: Lead;
-        Insert: Partial<Lead> & { lead_type: string };
-        Update: Partial<Lead>;
-      };
-    };
-  };
-}
+// Re-export table types for convenience
+export type { Dealer } from "@workspace/db";
+export type { Listing } from "@workspace/db";
+export type { Lead } from "@workspace/db";
 
 // ---------------------------------------------------------------------------
 // Factory functions (explicit URL + key — usable in any environment)
 // ---------------------------------------------------------------------------
 
 /** Create an anon (public) Supabase client — safe to use in the browser. */
-export function createAnonClient(
-  supabaseUrl: string,
-  supabaseAnonKey: string,
-): SupabaseClient<Database> {
-  return createClient<Database>(supabaseUrl, supabaseAnonKey);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createAnonClient(supabaseUrl: string, supabaseAnonKey: string): SupabaseClient<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return createClient<any>(supabaseUrl, supabaseAnonKey);
 }
 
 /** Create a service-role Supabase client — server-side only, bypasses RLS. */
-export function createServiceRoleClient(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-): SupabaseClient<Database> {
-  return createClient<Database>(supabaseUrl, serviceRoleKey, {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createServiceRoleClient(supabaseUrl: string, serviceRoleKey: string): SupabaseClient<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return createClient<any>(supabaseUrl, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -70,14 +50,17 @@ export function createServiceRoleClient(
 // Pre-configured singletons that read from process.env (server / Node only)
 // ---------------------------------------------------------------------------
 
-let _anonClient: SupabaseClient<Database> | null = null;
-let _serviceRoleClient: SupabaseClient<Database> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _anonClient: SupabaseClient<any> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _serviceRoleClient: SupabaseClient<any> | null = null;
 
 /**
  * Returns the shared anon Supabase client for server-side code.
  * Requires SUPABASE_URL and SUPABASE_ANON_KEY in process.env.
  */
-export function getAnonClient(): SupabaseClient<Database> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAnonClient(): SupabaseClient<any> {
   if (!_anonClient) {
     const url = process.env["SUPABASE_URL"];
     const key = process.env["SUPABASE_ANON_KEY"];
@@ -97,7 +80,8 @@ export function getAnonClient(): SupabaseClient<Database> {
  * Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in process.env.
  * This client bypasses Row Level Security — never expose it to the browser.
  */
-export function getServiceRoleClient(): SupabaseClient<Database> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getServiceRoleClient(): SupabaseClient<any> {
   if (!_serviceRoleClient) {
     const url = process.env["SUPABASE_URL"];
     const key = process.env["SUPABASE_SERVICE_ROLE_KEY"];
@@ -111,8 +95,3 @@ export function getServiceRoleClient(): SupabaseClient<Database> {
   }
   return _serviceRoleClient;
 }
-
-// ---------------------------------------------------------------------------
-// Re-export table types for convenience
-// ---------------------------------------------------------------------------
-export type { Dealer, Listing, Lead };
