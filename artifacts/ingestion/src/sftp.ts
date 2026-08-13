@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import SftpClient from "ssh2-sftp-client";
 import type { SftpConfig } from "./config.js";
@@ -44,4 +44,27 @@ export function readLocalFixture(relativePath = "fixtures/sample.csv"): Buffer {
   const fullPath = resolve(process.cwd(), relativePath);
   console.log(`[local] Reading fixture: ${fullPath}`);
   return readFileSync(fullPath);
+}
+
+/**
+ * Reads every *.csv file in a local fixtures directory (for offline
+ * development / CI testing with multiple dealer feeds — mirrors the
+ * real-world scenario where each store drops its own CSV on the SFTP server).
+ * Pass --local on the command line to activate this path.
+ */
+export function readLocalFixtureDir(relativeDir = "fixtures"): { filename: string; buffer: Buffer }[] {
+  const fullDir = resolve(process.cwd(), relativeDir);
+  const files = readdirSync(fullDir).filter((f) => f.toLowerCase().endsWith(".csv"));
+
+  if (files.length === 0) {
+    throw new Error(`No .csv files found in fixtures directory: ${fullDir}`);
+  }
+
+  console.log(`[local] Found ${files.length} fixture file(s) in ${fullDir}`);
+
+  return files.map((filename) => {
+    const fullPath = resolve(fullDir, filename);
+    console.log(`[local] Reading fixture: ${fullPath}`);
+    return { filename, buffer: readFileSync(fullPath) };
+  });
 }

@@ -127,12 +127,15 @@ export function parseCsv(csvBuffer: Buffer): ParseResult {
 
   const totalRows = rows.length;
 
-  // Filter: Used vehicles with Retail disposition
+  // Filter: Used vehicles with Retail disposition.
+  // Feeds vary in format — some spell out "Used"/"Retail", others send single-letter
+  // codes ("U"/"N" and "R"/"F"/"W"). Match on the leading letter to support both.
   const filtered = rows.filter((r) => {
-    const newUsed = str(r["New/Used"]);
-    const disposition = str(r["Disposition"]) ?? "";
-    const isUsed = newUsed?.toLowerCase() === "used";
-    const isRetail = disposition.toLowerCase().includes("retail");
+    const newUsed = (str(r["New/Used"]) ?? "").toLowerCase();
+    const disposition = (str(r["Disposition"]) ?? "").toLowerCase();
+    const isUsed = newUsed === "u" || newUsed === "used" || newUsed.startsWith("u");
+    const isRetail =
+      disposition === "r" || disposition === "retail" || disposition.startsWith("r");
     return isUsed && isRetail;
   });
 

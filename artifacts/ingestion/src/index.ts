@@ -10,8 +10,8 @@
  */
 
 import { loadConfig, loadLocalConfig } from "./config.js";
-import { fetchFromSftp, readLocalFixture } from "./sftp.js";
-import { parseCsv } from "./parse.js";
+import { fetchFromSftp, readLocalFixtureDir } from "./sftp.js";
+import { parseCsv, type DealerRow, type ListingRow } from "./parse.js";
 import { upsertInventory } from "./db.js";
 
 const isLocal = process.argv.includes("--local");
@@ -23,8 +23,10 @@ async function main(): Promise<void> {
   console.log(`  Mode: ${isLocal ? "LOCAL FIXTURE" : "SFTP"}`);
   console.log(`====================================================\n`);
 
-  // ── 1. Load config ─────────────────────────────────────────────────────────
-  let csvBuffer: Buffer;
+  // ── 1. Load config & source CSV(s) ──────────────────────────────────────────
+  // Each store/dealer may send its own CSV file, so we support fetching and
+  // parsing multiple files in one run and merging the results before upsert.
+  let csvBuffers: { filename: string; buffer: Buffer }[];
   let supabaseUrl: string;
   let supabaseServiceRoleKey: string;
 
@@ -32,7 +34,7 @@ async function main(): Promise<void> {
     const config = loadLocalConfig();
     supabaseUrl = config.supabaseUrl;
     supabaseServiceRoleKey = config.supabaseServiceRoleKey;
-    csvBuffer = readLocalFixture();
+    csvBuffers = readLocalFixtureDir();
   } else {
     const config = loadConfig();
     supabaseUrl = config.supabaseUrl;
@@ -40,7 +42,8 @@ async function main(): Promise<void> {
 
     // ── 2. Fetch CSV from SFTP ─────────────────────────────────────────────
     try {
-      csvBuffer = await fetchFromSftp(config.sftp);
+      const buffer = await fetchFromSftp(config.sftp);
+      csvBuffers = [{ filename: config.sftp.remotePath, buffer }];
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`\n[error] SFTP fetch failed: ${msg}`);
@@ -51,10 +54,27 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── 3. Parse & filter ──────────────────────────────────────────────────────
-  console.log("[parse] Parsing CSV…");
-  const { dealers, listings, totalRows, filteredRows, droppedRows } =
-    parseCsv(csvBuffer);
+  // ── 3. Parse & filter each file, merging results ────────────────────────────
+  console.log(`[parse] Parsing ${csvBuffers.length} file(s)…`);
+  const dealers = new Map<string, DealerRow>();
+  const listings: ListingRow[] = [];
+  let totalRows = 0;
+  let filteredRows = 0;
+  let droppedRows = 0;
+
+  for (const { filename, buffer } of csvBuffers) {
+    const result = parseCsv(buffer);
+    console.log(
+      `[parse]   ${filename}: ${result.totalRows} total, ${result.filteredRows} kept, ${result.droppedRows} dropped`,
+    );
+    for (const [dealerId, dealer] of result.dealers) {
+      dealers.set(dealerId, dealer);
+    }
+    listings.push(...result.listings);
+    totalRows += result.totalRows;
+    filteredRows += result.filteredRows;
+    droppedRows += result.droppedRows;
+  }
 
   console.log(`[parse] Total rows in CSV  : ${totalRows.toLocaleString()}`);
   console.log(`[parse] Rows after filter  : ${filteredRows.toLocaleString()}`);
