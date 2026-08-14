@@ -16,7 +16,7 @@ export function DiscoverHero({ onStart }: DiscoverHeroProps) {
       {tiles.length > 0 && (
         <div
           aria-hidden
-          className="absolute inset-0 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 scale-110 blur-2xl opacity-60"
+          className="absolute inset-0 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 scale-110 blur-xl opacity-90"
         >
           {tiles.map((src, i) => (
             <div key={i} className="aspect-square bg-muted overflow-hidden">
@@ -27,7 +27,7 @@ export function DiscoverHero({ onStart }: DiscoverHeroProps) {
       )}
       <div
         aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/85 to-background/95"
+        className="absolute inset-0 bg-gradient-to-br from-background/60 via-background/50 to-background/70"
       />
       <div
         aria-hidden
