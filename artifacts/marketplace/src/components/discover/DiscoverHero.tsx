@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useGetListings } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Sparkles, ArrowRight } from 'lucide-react';
 
@@ -7,11 +8,26 @@ interface DiscoverHeroProps {
 }
 
 export function DiscoverHero({ onStart }: DiscoverHeroProps) {
+  const { data } = useGetListings({ limit: 24 });
+  const tiles = (data?.items ?? []).map((l) => l.photo_urls?.[0]).filter(Boolean) as string[];
+
   return (
     <div className="relative overflow-hidden min-h-[calc(100dvh-4rem)] flex items-center justify-center px-4">
+      {tiles.length > 0 && (
+        <div
+          aria-hidden
+          className="absolute inset-0 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 scale-110 blur-2xl opacity-60"
+        >
+          {tiles.map((src, i) => (
+            <div key={i} className="aspect-square bg-muted overflow-hidden">
+              <img src={src} alt="" className="w-full h-full object-cover" loading="lazy" />
+            </div>
+          ))}
+        </div>
+      )}
       <div
         aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-background"
+        className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/85 to-background/95"
       />
       <div
         aria-hidden
