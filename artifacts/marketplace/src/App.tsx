@@ -12,6 +12,7 @@ import {
 } from 'wouter';
 import { Layout } from '@/components/Layout';
 import Home from '@/pages/Home';
+import Discover from '@/pages/Discover';
 import ListingDetail from '@/pages/ListingDetail';
 
 const queryClient = new QueryClient();
@@ -21,7 +22,8 @@ function Router() {
     <RoutedErrorBoundary>
       <Layout>
         <Switch>
-          <Route path="/" component={Home} />
+          <Route path="/" component={Discover} />
+          <Route path="/browse" component={Home} />
           <Route path="/listings/:vin" component={ListingDetail} />
           <Route component={NotFound} />
         </Switch>

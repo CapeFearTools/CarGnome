@@ -1,24 +1,53 @@
 import { type ReactNode } from 'react';
-import { Link } from 'wouter';
-import { Car } from 'lucide-react';
+import { Link, useLocation } from 'wouter';
+import { Car, Sparkles, LayoutGrid } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+function ModeToggle() {
+  const [location] = useLocation();
+  const isDiscover = location === '/';
+
+  return (
+    <div className="inline-flex items-center rounded-full bg-muted p-1 gap-1">
+      <Link
+        href="/"
+        className={cn(
+          'flex items-center gap-1.5 rounded-full px-3 md:px-4 py-1.5 text-sm font-semibold transition-colors',
+          isDiscover ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <Sparkles size={15} />
+        <span className="hidden sm:inline">Discover</span>
+      </Link>
+      <Link
+        href="/browse"
+        className={cn(
+          'flex items-center gap-1.5 rounded-full px-3 md:px-4 py-1.5 text-sm font-semibold transition-colors',
+          !isDiscover ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <LayoutGrid size={15} />
+        <span className="hidden sm:inline">Browse All</span>
+      </Link>
+    </div>
+  );
+}
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background selection:bg-primary/20">
       <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80 shrink-0">
             <div className="bg-primary text-primary-foreground p-1.5 rounded-md">
               <Car size={20} strokeWidth={2.5} />
             </div>
-            <span className="font-serif text-xl font-semibold tracking-tight">
+            <span className="font-serif text-xl font-semibold tracking-tight hidden md:inline">
               AutoClassic
             </span>
           </Link>
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
-            <Link href="/" className="hover:text-foreground transition-colors">
-              Inventory
-            </Link>
+          <ModeToggle />
+          <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-muted-foreground">
             <a href="#" className="hover:text-foreground transition-colors">
               Financing
             </a>
