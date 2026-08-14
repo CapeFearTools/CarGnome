@@ -6,10 +6,10 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Sparkles, Search, Shuffle } from 'lucide-react';
+import { Sparkles, Search, Shuffle, Check } from 'lucide-react';
 
 interface DiscoverQuizProps {
-  onComplete: (params: GetListingsParams) => void;
+  onComplete: (params: GetListingsParams, makes?: string[]) => void;
 }
 
 const PRICE_OPTIONS = [
@@ -39,6 +39,7 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
   const { data: filters, isLoading } = useGetListingFilters();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Answers>({});
+  const [selectedMakes, setSelectedMakes] = useState<string[]>([]);
 
   const steps = ['make', 'price', 'mileage'] as const;
   const totalSteps = steps.length;
@@ -47,11 +48,13 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
     const next = { ...answers, ...patch };
     setAnswers(next);
     if (step + 1 >= totalSteps) {
-      onComplete({ ...next, limit: 30 });
+      onComplete({ ...next, limit: selectedMakes.length ? 60 : 30 }, selectedMakes);
     } else {
       setStep(step + 1);
     }
   };
+
+  const handleMakeContinue = () => advance({});
 
   const goBack = () => setStep((s) => Math.max(0, s - 1));
 
@@ -86,7 +89,17 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
       {currentStep === 'make' && (
         <BrandStep
           makes={filters.makes}
-          onSelect={(value) => advance({ make: value })}
+          selected={selectedMakes}
+          onToggle={(make) =>
+            setSelectedMakes((prev) =>
+              prev.includes(make) ? prev.filter((m) => m !== make) : [...prev, make],
+            )
+          }
+          onSurpriseMe={() => {
+            setSelectedMakes([]);
+            advance({});
+          }}
+          onContinue={handleMakeContinue}
         />
       )}
 
@@ -117,10 +130,16 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
 
 function BrandStep({
   makes,
-  onSelect,
+  selected,
+  onToggle,
+  onSurpriseMe,
+  onContinue,
 }: {
   makes: string[];
-  onSelect: (value: string | undefined) => void;
+  selected: string[];
+  onToggle: (make: string) => void;
+  onSurpriseMe: () => void;
+  onContinue: () => void;
 }) {
   const [query, setQuery] = useState('');
   const filtered = query.trim()
@@ -129,7 +148,8 @@ function BrandStep({
 
   return (
     <div className="w-full">
-      <h2 className="text-xl font-semibold mb-5">Any brand you're set on?</h2>
+      <h2 className="text-xl font-semibold mb-1">Any brand you're set on?</h2>
+      <p className="text-sm text-muted-foreground mb-4">Pick as many as you like, or skip.</p>
 
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -143,7 +163,7 @@ function BrandStep({
       </div>
 
       <button
-        onClick={() => onSelect(undefined)}
+        onClick={onSurpriseMe}
         className={cn(
           'w-full mb-3 rounded-xl px-4 py-3.5 text-sm font-semibold text-left',
           'bg-gradient-to-r from-primary to-primary/70 text-primary-foreground',
@@ -156,25 +176,38 @@ function BrandStep({
       </button>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[280px] overflow-y-auto pr-1">
-        {filtered.map((make) => (
-          <button
-            key={make}
-            onClick={() => onSelect(make)}
-            className={cn(
-              'rounded-xl border border-border/60 bg-card px-3 py-3.5 text-sm font-medium',
-              'hover:border-primary hover:bg-primary/5 hover:text-primary transition-all',
-              'active:scale-95',
-            )}
-          >
-            {make}
-          </button>
-        ))}
+        {filtered.map((make) => {
+          const isSelected = selected.includes(make);
+          return (
+            <button
+              key={make}
+              onClick={() => onToggle(make)}
+              className={cn(
+                'relative rounded-xl border px-3 py-3.5 text-sm font-medium transition-all active:scale-95',
+                isSelected
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border/60 bg-card hover:border-primary hover:bg-primary/5 hover:text-primary',
+              )}
+            >
+              {isSelected && (
+                <Check size={14} className="absolute top-1.5 right-1.5 text-primary" />
+              )}
+              {make}
+            </button>
+          );
+        })}
         {filtered.length === 0 && (
           <p className="col-span-full text-sm text-muted-foreground py-6 text-center">
             No brands match "{query}"
           </p>
         )}
       </div>
+
+      {selected.length > 0 && (
+        <Button onClick={onContinue} className="w-full mt-5 h-11 rounded-xl">
+          Continue with {selected.length} {selected.length === 1 ? 'brand' : 'brands'}
+        </Button>
+      )}
     </div>
   );
 }

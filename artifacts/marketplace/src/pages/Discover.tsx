@@ -12,9 +12,11 @@ export default function Discover() {
   const [liked, setLiked, clearLiked] = useLocalStorage<Listing[]>('discover-liked', []);
   const [stage, setStage] = useState<Stage>(liked.length > 0 ? 'shortlist' : 'hero');
   const [quizParams, setQuizParams] = useState<GetListingsParams | null>(null);
+  const [quizMakes, setQuizMakes] = useState<string[]>([]);
 
-  const handleQuizComplete = (params: GetListingsParams) => {
+  const handleQuizComplete = (params: GetListingsParams, makes: string[] = []) => {
     setQuizParams(params);
+    setQuizMakes(makes);
     setStage('swipe');
   };
 
@@ -49,6 +51,7 @@ export default function Discover() {
     return (
       <SwipeDeck
         params={quizParams}
+        makes={quizMakes}
         excludeVins={liked.map((l) => l.vin)}
         onLike={handleLike}
         onFinished={() => setStage('shortlist')}

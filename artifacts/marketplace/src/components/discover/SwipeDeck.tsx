@@ -9,20 +9,24 @@ import { X, Heart, RotateCcw } from 'lucide-react';
 
 interface SwipeDeckProps {
   params: GetListingsParams;
+  makes?: string[];
   excludeVins: string[];
   onLike: (listing: Listing) => void;
   onFinished: () => void;
   onRestart: () => void;
 }
 
-export function SwipeDeck({ params, excludeVins, onLike, onFinished, onRestart }: SwipeDeckProps) {
+export function SwipeDeck({ params, makes = [], excludeVins, onLike, onFinished, onRestart }: SwipeDeckProps) {
   const { data, isLoading, isError } = useGetListings(params);
   const [index, setIndex] = useState(0);
 
   const deck = useMemo(() => {
     const excluded = new Set(excludeVins);
-    return (data?.items ?? []).filter((l) => !excluded.has(l.vin));
-  }, [data, excludeVins]);
+    const makeSet = new Set(makes.map((m) => m.toLowerCase()));
+    return (data?.items ?? []).filter(
+      (l) => !excluded.has(l.vin) && (makeSet.size === 0 || makeSet.has((l.make ?? '').toLowerCase())),
+    );
+  }, [data, excludeVins, makes]);
 
   const handleSwipe = (direction: 'left' | 'right') => {
     const current = deck[index];
