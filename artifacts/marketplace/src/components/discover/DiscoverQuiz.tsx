@@ -4,6 +4,7 @@ import type { GetListingsParams } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
 
@@ -83,13 +84,9 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
       <Progress value={((step + 1) / totalSteps) * 100} className="mb-10 w-full max-w-xs" />
 
       {currentStep === 'make' && (
-        <QuizStep
-          question="Any brand you're set on?"
-          options={[
-            { label: 'Surprise me', value: undefined },
-            ...filters.makes.map((m) => ({ label: m, value: m })),
-          ]}
-          onSelect={(value) => advance({ make: value as string | undefined })}
+        <BrandStep
+          makes={filters.makes}
+          onSelect={(value) => advance({ make: value })}
         />
       )}
 
@@ -114,6 +111,40 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
           Back
         </Button>
       )}
+    </div>
+  );
+}
+
+function BrandStep({
+  makes,
+  onSelect,
+}: {
+  makes: string[];
+  onSelect: (value: string | undefined) => void;
+}) {
+  return (
+    <div className="w-full text-left">
+      <h2 className="text-xl font-semibold mb-6 text-center">Any brand you're set on?</h2>
+      <Command className="rounded-xl border border-border/60 bg-card shadow-sm">
+        <CommandInput placeholder="Search brands..." />
+        <CommandList>
+          <CommandGroup>
+            <CommandItem onSelect={() => onSelect(undefined)} className="cursor-pointer py-2.5">
+              Surprise me
+            </CommandItem>
+            {makes.map((make) => (
+              <CommandItem
+                key={make}
+                value={make}
+                onSelect={() => onSelect(make)}
+                className="cursor-pointer py-2.5"
+              >
+                {make}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </Command>
     </div>
   );
 }
