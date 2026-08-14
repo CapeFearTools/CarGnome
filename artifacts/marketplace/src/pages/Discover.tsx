@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import type { GetListingsParams, Listing } from '@workspace/api-client-react';
 import { useLocalStorage } from '@/hooks/use-local-storage';
+import { DiscoverHero } from '@/components/discover/DiscoverHero';
 import { DiscoverQuiz } from '@/components/discover/DiscoverQuiz';
 import { SwipeDeck } from '@/components/discover/SwipeDeck';
 import { Shortlist } from '@/components/discover/Shortlist';
 
-type Stage = 'quiz' | 'swipe' | 'shortlist';
+type Stage = 'hero' | 'quiz' | 'swipe' | 'shortlist';
 
 export default function Discover() {
   const [liked, setLiked, clearLiked] = useLocalStorage<Listing[]>('discover-liked', []);
-  const [stage, setStage] = useState<Stage>(liked.length > 0 ? 'shortlist' : 'quiz');
+  const [stage, setStage] = useState<Stage>(liked.length > 0 ? 'shortlist' : 'hero');
   const [quizParams, setQuizParams] = useState<GetListingsParams | null>(null);
 
   const handleQuizComplete = (params: GetListingsParams) => {
@@ -35,6 +36,10 @@ export default function Discover() {
     setQuizParams(null);
     setStage('quiz');
   };
+
+  if (stage === 'hero') {
+    return <DiscoverHero onStart={() => setStage('quiz')} />;
+  }
 
   if (stage === 'quiz') {
     return <DiscoverQuiz onComplete={handleQuizComplete} />;
