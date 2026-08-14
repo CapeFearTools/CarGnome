@@ -102,10 +102,13 @@ function splitPhotos(val: unknown): string[] {
 function dateStr(val: unknown): string | null {
   const s = str(val);
   if (!s) return null;
-  // Accept YYYY-MM-DD or MM/DD/YYYY and convert to YYYY-MM-DD
+  // Accept YYYY-MM-DD (optionally with a trailing time component) and slice it off.
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
-    const [m, d, y] = s.split("/");
+  // Accept MM/DD/YYYY, optionally followed by a time component (e.g. "7/30/2026 1:59:46 PM"),
+  // and convert to YYYY-MM-DD, ignoring anything after the date itself.
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
+  if (match) {
+    const [, m, d, y] = match;
     return `${y}-${m!.padStart(2, "0")}-${d!.padStart(2, "0")}`;
   }
   return s;
