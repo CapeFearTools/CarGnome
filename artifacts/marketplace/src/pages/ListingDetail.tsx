@@ -335,7 +335,7 @@ export default function ListingDetail() {
                       <CarIcon size={24} />
                     </div>
                     <div>
-                      <h3 className="font-serif font-bold text-foreground text-lg">AutoClassic Dealer</h3>
+                      <h3 className="font-serif font-bold text-foreground text-lg">Drive Cape Fear Dealer</h3>
                       <p className="text-sm text-muted-foreground">Premium Used Vehicles</p>
                     </div>
                   </div>
