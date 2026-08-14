@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useGetListings } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Sparkles, ArrowRight } from 'lucide-react';
@@ -7,35 +8,53 @@ interface DiscoverHeroProps {
   onStart: () => void;
 }
 
+const SLIDE_DURATION_MS = 6000;
+
 export function DiscoverHero({ onStart }: DiscoverHeroProps) {
-  const { data } = useGetListings({ limit: 24 });
-  const tiles = (data?.items ?? []).map((l) => l.photo_urls?.[0]).filter(Boolean) as string[];
+  const { data } = useGetListings({ limit: 12 });
+  const photos = (data?.items ?? []).map((l) => l.photo_urls?.[0]).filter(Boolean) as string[];
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (photos.length < 2) return;
+    const id = setInterval(() => {
+      setIndex((i) => (i + 1) % photos.length);
+    }, SLIDE_DURATION_MS);
+    return () => clearInterval(id);
+  }, [photos.length]);
 
   return (
     <div className="relative overflow-hidden min-h-[calc(100dvh-4rem)] flex items-center justify-center px-4">
-      {tiles.length > 0 && (
-        <div
-          aria-hidden
-          className="absolute inset-0 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 scale-110 blur-sm opacity-90"
-        >
-          {tiles.map((src, i) => (
-            <div key={i} className="aspect-square bg-muted overflow-hidden">
-              <img src={src} alt="" className="w-full h-full object-cover" loading="lazy" />
-            </div>
-          ))}
+      {photos.length > 0 && (
+        <div aria-hidden className="absolute inset-0">
+          <AnimatePresence mode="sync">
+            <motion.div
+              key={photos[index]}
+              className="absolute inset-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.5, ease: 'easeInOut' }}
+            >
+              <motion.img
+                src={photos[index]}
+                alt=""
+                className="w-full h-full object-cover"
+                initial={{ scale: 1 }}
+                animate={{ scale: 1.08 }}
+                transition={{ duration: SLIDE_DURATION_MS / 1000 + 1.5, ease: 'linear' }}
+              />
+            </motion.div>
+          </AnimatePresence>
         </div>
       )}
       <div
         aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-background/60 via-background/50 to-background/70"
+        className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/40"
       />
       <div
         aria-hidden
-        className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
+        className="absolute inset-0 bg-background/20"
       />
 
       <motion.div
