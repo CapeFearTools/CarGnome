@@ -4,9 +4,9 @@ import type { GetListingsParams } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Search, Shuffle } from 'lucide-react';
 
 interface DiscoverQuizProps {
   onComplete: (params: GetListingsParams) => void;
@@ -122,29 +122,59 @@ function BrandStep({
   makes: string[];
   onSelect: (value: string | undefined) => void;
 }) {
+  const [query, setQuery] = useState('');
+  const filtered = query.trim()
+    ? makes.filter((m) => m.toLowerCase().includes(query.trim().toLowerCase()))
+    : makes;
+
   return (
-    <div className="w-full text-left">
-      <h2 className="text-xl font-semibold mb-6 text-center">Any brand you're set on?</h2>
-      <Command className="rounded-xl border border-border/60 bg-card shadow-sm">
-        <CommandInput placeholder="Search brands..." />
-        <CommandList>
-          <CommandGroup>
-            <CommandItem onSelect={() => onSelect(undefined)} className="cursor-pointer py-2.5">
-              Surprise me
-            </CommandItem>
-            {makes.map((make) => (
-              <CommandItem
-                key={make}
-                value={make}
-                onSelect={() => onSelect(make)}
-                className="cursor-pointer py-2.5"
-              >
-                {make}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </Command>
+    <div className="w-full">
+      <h2 className="text-xl font-semibold mb-5">Any brand you're set on?</h2>
+
+      <div className="relative mb-4">
+        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search brands..."
+          className="pl-9 h-11 rounded-xl"
+          autoFocus
+        />
+      </div>
+
+      <button
+        onClick={() => onSelect(undefined)}
+        className={cn(
+          'w-full mb-3 rounded-xl px-4 py-3.5 text-sm font-semibold text-left',
+          'bg-gradient-to-r from-primary to-primary/70 text-primary-foreground',
+          'hover:opacity-90 active:scale-[0.98] transition-all',
+          'flex items-center gap-2.5',
+        )}
+      >
+        <Shuffle size={16} />
+        Surprise me — show all brands
+      </button>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[280px] overflow-y-auto pr-1">
+        {filtered.map((make) => (
+          <button
+            key={make}
+            onClick={() => onSelect(make)}
+            className={cn(
+              'rounded-xl border border-border/60 bg-card px-3 py-3.5 text-sm font-medium',
+              'hover:border-primary hover:bg-primary/5 hover:text-primary transition-all',
+              'active:scale-95',
+            )}
+          >
+            {make}
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <p className="col-span-full text-sm text-muted-foreground py-6 text-center">
+            No brands match "{query}"
+          </p>
+        )}
+      </div>
     </div>
   );
 }
