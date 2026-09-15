@@ -13,6 +13,22 @@ export interface ApiError {
   error: string;
 }
 
+export interface Dealer {
+  dealer_id: string;
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postal_code?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
+}
+
 export interface Listing {
   id: string;
   vin: string;
@@ -80,6 +96,7 @@ export interface Listing {
   created_at?: string | null;
   /** @nullable */
   updated_at?: string | null;
+  dealer?: Dealer;
 }
 
 export interface ListingsPage {
@@ -127,18 +144,17 @@ export const LeadInputLeadType = {
 export interface LeadInput {
   /** @nullable */
   vin?: string | null;
-  /** @nullable */
-  listing_id?: string | null;
   lead_type: LeadInputLeadType;
-  /** @minLength 1 */
-  name: string;
-  email: string;
-  /** @minLength 1 */
-  phone: string;
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
   /** @nullable */
   message?: string | null;
   /** @nullable */
-  vehicle_detail_link?: string | null;
+  website?: string | null;
 }
 
 export interface Lead {
@@ -172,5 +188,9 @@ price_max?: number;
 odometer_max?: number;
 limit?: number;
 offset?: number;
+};
+
+export type GetListingFiltersParams = {
+make?: string;
 };
 

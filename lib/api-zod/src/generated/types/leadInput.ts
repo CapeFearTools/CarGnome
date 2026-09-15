@@ -10,16 +10,15 @@ import type { LeadInputLeadType } from './leadInputLeadType';
 export interface LeadInput {
   /** @nullable */
   vin?: string | null;
-  /** @nullable */
-  listing_id?: string | null;
   lead_type: LeadInputLeadType;
-  /** @minLength 1 */
-  name: string;
-  email: string;
-  /** @minLength 1 */
-  phone: string;
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
   /** @nullable */
   message?: string | null;
   /** @nullable */
-  vehicle_detail_link?: string | null;
+  website?: string | null;
 }

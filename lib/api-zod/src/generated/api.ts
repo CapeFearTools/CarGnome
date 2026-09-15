@@ -70,7 +70,16 @@ export const GetListingsResponse = zod.object({
   "age": zod.number().nullish(),
   "status": zod.string(),
   "created_at": zod.string().nullish(),
-  "updated_at": zod.string().nullish()
+  "updated_at": zod.string().nullish(),
+  "dealer": zod.object({
+  "dealer_id": zod.string(),
+  "name": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postal_code": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "phone": zod.string().nullish()
+}).optional()
 })),
   "total": zod.number(),
   "limit": zod.number(),
@@ -81,6 +90,10 @@ export const GetListingsResponse = zod.object({
 /**
  * @summary Distinct filter options (makes, models, year/price/mileage ranges)
  */
+export const GetListingFiltersQueryParams = zod.object({
+  "make": zod.coerce.string().optional()
+})
+
 export const GetListingFiltersResponse = zod.object({
   "makes": zod.array(zod.string()),
   "models": zod.array(zod.string()),
@@ -147,7 +160,16 @@ export const GetListingResponse = zod.object({
   "age": zod.number().nullish(),
   "status": zod.string(),
   "created_at": zod.string().nullish(),
-  "updated_at": zod.string().nullish()
+  "updated_at": zod.string().nullish(),
+  "dealer": zod.object({
+  "dealer_id": zod.string(),
+  "name": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postal_code": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "phone": zod.string().nullish()
+}).optional()
 })
 
 
@@ -160,13 +182,12 @@ export const GetListingResponse = zod.object({
 
 export const CreateLeadBody = zod.object({
   "vin": zod.string().nullish(),
-  "listing_id": zod.string().nullish(),
   "lead_type": zod.enum(['inquiry', 'click_for_price']),
-  "name": zod.string().min(1),
-  "email": zod.string(),
-  "phone": zod.string().min(1),
+  "name": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "phone": zod.string().nullish(),
   "message": zod.string().nullish(),
-  "vehicle_detail_link": zod.string().nullish()
+  "website": zod.string().nullish()
 })
 
 export const CreateLeadResponse = zod.object({

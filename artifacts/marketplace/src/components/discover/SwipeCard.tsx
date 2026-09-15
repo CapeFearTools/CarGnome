@@ -1,14 +1,29 @@
-import { motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import { motion, useMotionValue, useTransform, type PanInfo, type Variants } from 'framer-motion';
 import { Gauge, Settings, ShieldCheck, Fuel } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { Listing } from '@workspace/api-client-react';
 
+export type SwipeDirection = 'left' | 'right';
+
 interface SwipeCardProps {
   listing: Listing;
-  onSwipe: (direction: 'left' | 'right') => void;
+  onSwipe: (direction: SwipeDirection) => void;
   isTop: boolean;
   zIndex: number;
+  /** Direction of the latest swipe; a leaving card flies off that way. */
+  exitDirection: SwipeDirection;
 }
+
+// The exit is a variant so AnimatePresence can hand it the swipe direction
+// through `custom` — a card that is already leaving no longer gets new props.
+const cardVariants: Variants = {
+  exit: (direction: SwipeDirection) => ({
+    x: direction === 'right' ? 500 : -500,
+    rotate: direction === 'right' ? 25 : -25,
+    opacity: 0,
+    transition: { duration: 0.3 },
+  }),
+};
 
 const formatPrice = (price: number | null | undefined) => {
   if (price === null || price === undefined) return 'Call for Price';
@@ -26,7 +41,7 @@ const formatMileage = (miles: number | null | undefined) => {
 
 const SWIPE_THRESHOLD = 120;
 
-export function SwipeCard({ listing, onSwipe, isTop, zIndex }: SwipeCardProps) {
+export function SwipeCard({ listing, onSwipe, isTop, zIndex, exitDirection }: SwipeCardProps) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-300, 300], [-18, 18]);
   const likeOpacity = useTransform(x, [20, 120], [0, 1]);
@@ -54,12 +69,9 @@ export function SwipeCard({ listing, onSwipe, isTop, zIndex }: SwipeCardProps) {
       dragElastic={1}
       onDragEnd={handleDragEnd}
       animate={isTop ? { scale: 1, y: 0 } : { scale: 0.96, y: 12 }}
-      exit={(dir: any) => ({
-        x: dir === 'right' ? 500 : -500,
-        rotate: dir === 'right' ? 25 : -25,
-        opacity: 0,
-        transition: { duration: 0.3 },
-      })}
+      variants={cardVariants}
+      custom={exitDirection}
+      exit="exit"
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
     >
       <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-xl border border-border/50 bg-card">

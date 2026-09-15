@@ -35,6 +35,7 @@ paths:
       tags: [listings]
       summary: List active vehicle listings with optional filters
       parameters:
+        # One make, or several separated by commas (e.g. "Audi,Land Rover").
         - name: make
           in: query
           schema: { type: string }
@@ -75,6 +76,11 @@ paths:
       operationId: getListingFilters
       tags: [listings]
       summary: Distinct filter options (makes, models, year/price/mileage ranges)
+      parameters:
+        # Narrows `models` to these makes (comma-separated). `makes` always lists every make.
+        - name: make
+          in: query
+          schema: { type: string }
       responses:
         "200":
           description: Filter options
@@ -144,6 +150,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Too many leads from this visitor; try again later
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
 components:
   schemas:
@@ -158,6 +170,18 @@ components:
       required: [error]
       properties:
         error: { type: string }
+
+    Dealer:
+      type: object
+      required: [dealer_id]
+      properties:
+        dealer_id: { type: string }
+        name: { type: ["string", "null"] }
+        address: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        postal_code: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
 
     Listing:
       type: object
@@ -200,6 +224,9 @@ components:
         status: { type: string }
         created_at: { type: ["string", "null"] }
         updated_at: { type: ["string", "null"] }
+        # Only included by GET /listings/{vin}.
+        dealer:
+          $ref: "#/components/schemas/Dealer"
 
     ListingsPage:
       type: object
@@ -240,18 +267,21 @@ components:
         max_price: { type: ["number", "null"] }
         makes_count: { type: number }
 
+    # The server links the lead to its listing by VIN. Inquiries must include
+    # name, a valid email and a phone number; click_for_price leads carry no
+    # contact details.
     LeadInput:
       type: object
-      required: [lead_type, name, email, phone]
+      required: [lead_type]
       properties:
         vin: { type: ["string", "null"] }
-        listing_id: { type: ["string", "null"] }
         lead_type: { type: string, enum: [inquiry, click_for_price] }
-        name: { type: string, minLength: 1 }
-        email: { type: string }
-        phone: { type: string, minLength: 1 }
+        name: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
         message: { type: ["string", "null"] }
-        vehicle_detail_link: { type: ["string", "null"] }
+        # Honeypot: the site hides this field, so only bots fill it in.
+        website: { type: ["string", "null"] }
 
     Lead:
       type: object

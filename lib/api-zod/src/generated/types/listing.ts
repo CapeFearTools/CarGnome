@@ -5,6 +5,7 @@
  * Used-car marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { Dealer } from './dealer';
 
 export interface Listing {
   id: string;
@@ -73,4 +74,5 @@ export interface Listing {
   created_at?: string | null;
   /** @nullable */
   updated_at?: string | null;
+  dealer?: Dealer;
 }

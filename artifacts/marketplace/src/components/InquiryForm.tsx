@@ -17,22 +17,29 @@ import { CheckCircle2, Loader2, Send } from 'lucide-react';
 import { useState } from 'react';
 import { LeadInputLeadType } from '@workspace/api-client-react';
 
+const GENERIC_SUBMIT_ERROR = "Sorry, we couldn't send your message. Please try again or contact the dealer directly.";
+
+// Mirrors the server's checks in artifacts/api-server/src/routes/leads.ts.
 const formSchema = z.object({
-  name: z.string().min(2, "Name is required"),
-  email: z.string().email("Invalid email address"),
-  phone: z.string().min(10, "Valid phone number is required"),
-  message: z.string().optional(),
+  name: z.string().trim().min(2, "Name is required").max(120, "Name is too long"),
+  email: z.string().trim().email("Invalid email address").max(254, "Email is too long"),
+  phone: z
+    .string()
+    .max(40, "Phone number is too long")
+    .refine((value) => value.replace(/\D/g, '').length >= 10, "Valid phone number is required"),
+  message: z.string().max(2000, "Message must be 2,000 characters or fewer").optional(),
+  // Honeypot: hidden from people, so only bots fill it in.
+  website: z.string().optional(),
 });
 
 interface InquiryFormProps {
   vin: string;
-  listingId: string;
   defaultMessage?: string;
   leadType?: LeadInputLeadType;
   onSuccess?: () => void;
 }
 
-export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquiry', onSuccess }: InquiryFormProps) {
+export function InquiryForm({ vin, defaultMessage, leadType = 'inquiry', onSuccess }: InquiryFormProps) {
   const [submitted, setSubmitted] = useState(false);
   const createLead = useCreateLead();
 
@@ -43,6 +50,7 @@ export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquir
       email: "",
       phone: "",
       message: defaultMessage || "",
+      website: "",
     },
   });
 
@@ -52,7 +60,6 @@ export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquir
         data: {
           ...values,
           vin,
-          listing_id: listingId,
           lead_type: leadType,
         }
       },
@@ -65,6 +72,11 @@ export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquir
     );
   }
 
+  // Validation and rate-limit responses carry a message meant for the visitor.
+  const error = createLead.error;
+  const serverMessage = error && (error.status === 400 || error.status === 429) ? error.data?.error : undefined;
+  const submitError = createLead.isError ? serverMessage || GENERIC_SUBMIT_ERROR : null;
+
   if (submitted) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-center space-y-4 bg-muted/20 rounded-xl border border-border/50">
@@ -75,11 +87,12 @@ export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquir
         <p className="text-muted-foreground text-sm max-w-[250px]">
           Thank you for your interest. A member of our sales team will contact you shortly.
         </p>
-        <Button 
-          variant="outline" 
-          className="mt-4" 
+        <Button
+          variant="outline"
+          className="mt-4"
           onClick={() => {
             form.reset();
+            createLead.reset();
             setSubmitted(false);
           }}
         >
@@ -91,7 +104,14 @@ export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquir
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="relative space-y-4">
+        {/* Honeypot: moved off-screen and skipped by keyboard and screen readers. */}
+        <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+          <label>
+            Website
+            <input type="text" tabIndex={-1} autoComplete="off" {...form.register('website')} />
+          </label>
+        </div>
         <FormField
           control={form.control}
           name="name"
@@ -140,18 +160,18 @@ export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquir
             <FormItem>
               <FormLabel>Message (Optional)</FormLabel>
               <FormControl>
-                <Textarea 
-                  placeholder="I'm interested in this vehicle..." 
+                <Textarea
+                  placeholder="I'm interested in this vehicle..."
                   className="resize-none min-h-[100px]"
-                  {...field} 
+                  {...field}
                 />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           className="w-full text-base py-6 font-semibold shadow-md hover-elevate transition-all duration-300"
           disabled={createLead.isPending}
         >
@@ -167,6 +187,11 @@ export function InquiryForm({ vin, listingId, defaultMessage, leadType = 'inquir
             </>
           )}
         </Button>
+        {submitError && (
+          <p role="alert" className="text-sm text-destructive text-center">
+            {submitError}
+          </p>
+        )}
       </form>
     </Form>
   );

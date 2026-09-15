@@ -5,7 +5,9 @@ import { cn } from '@/lib/utils';
 
 function ModeToggle() {
   const [location] = useLocation();
+  // On other pages (e.g. a car's detail page) neither mode is highlighted.
   const isDiscover = location === '/';
+  const isBrowse = location.startsWith('/browse');
 
   return (
     <div className="inline-flex items-center rounded-full bg-muted p-1 gap-1">
@@ -23,7 +25,7 @@ function ModeToggle() {
         href="/browse"
         className={cn(
           'flex items-center gap-1.5 rounded-full px-3 md:px-4 py-1.5 text-sm font-semibold transition-colors',
-          !isDiscover ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+          isBrowse ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
         )}
       >
         <LayoutGrid size={15} />
@@ -47,26 +49,15 @@ export function Layout({ children }: { children: ReactNode }) {
             </span>
           </Link>
           <ModeToggle />
-          <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-muted-foreground">
-            <a href="#" className="hover:text-foreground transition-colors">
-              Financing
-            </a>
-            <a href="#" className="hover:text-foreground transition-colors">
-              About Us
-            </a>
-            <a href="#" className="hover:text-foreground transition-colors">
-              Contact
-            </a>
-          </nav>
         </div>
       </header>
-      
+
       <main className="flex-1 flex flex-col">
         {children}
       </main>
-      
+
       <footer className="border-t bg-muted/30 py-12 mt-auto">
-        <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="col-span-1 md:col-span-2">
             <Link href="/" className="flex items-center gap-2 mb-4">
               <div className="bg-primary text-primary-foreground p-1 rounded">
@@ -83,27 +74,13 @@ export function Layout({ children }: { children: ReactNode }) {
           <div>
             <h4 className="font-semibold mb-4 text-foreground">Quick Links</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><Link href="/" className="hover:text-primary transition-colors">Browse Inventory</Link></li>
-              <li><a href="#" className="hover:text-primary transition-colors">Value Your Trade</a></li>
-              <li><a href="#" className="hover:text-primary transition-colors">Apply for Financing</a></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold mb-4 text-foreground">Contact</h4>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>123 Classic Drive</li>
-              <li>Motor City, MC 12345</li>
-              <li>(555) 123-4567</li>
-              <li>sales@drivecapefear.example.com</li>
+              <li><Link href="/" className="hover:text-primary transition-colors">Discover Your Match</Link></li>
+              <li><Link href="/browse" className="hover:text-primary transition-colors">Browse Inventory</Link></li>
             </ul>
           </div>
         </div>
-        <div className="container mx-auto px-4 mt-12 pt-8 border-t text-sm text-muted-foreground flex flex-col md:flex-row items-center justify-between">
+        <div className="container mx-auto px-4 mt-12 pt-8 border-t text-sm text-muted-foreground">
           <p>&copy; {new Date().getFullYear()} Drive Cape Fear. All rights reserved.</p>
-          <div className="flex gap-4 mt-4 md:mt-0">
-            <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-foreground transition-colors">Terms of Service</a>
-          </div>
         </div>
       </footer>
     </div>

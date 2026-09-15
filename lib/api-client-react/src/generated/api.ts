@@ -21,6 +21,7 @@ import type {
 
 import type {
   ApiError,
+  GetListingFiltersParams,
   GetListingsParams,
   HealthStatus,
   Lead,
@@ -219,20 +220,27 @@ export function useGetListings<TData = Awaited<ReturnType<typeof getListings>>, 
 
 
 
-export const getGetListingFiltersUrl = () => {
+export const getGetListingFiltersUrl = (params?: GetListingFiltersParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/listings/filters`
+  return stringifiedParams.length > 0 ? `/api/listings/filters?${stringifiedParams}` : `/api/listings/filters`
 }
 
 /**
  * @summary Distinct filter options (makes, models, year/price/mileage ranges)
  */
-export const getListingFilters = async ( options?: Parameters<typeof customFetch>[1]): Promise<ListingFilters> => {
+export const getListingFilters = async (params?: GetListingFiltersParams, options?: Parameters<typeof customFetch>[1]): Promise<ListingFilters> => {
 
-  return customFetch<ListingFilters>(getGetListingFiltersUrl(),
+  return customFetch<ListingFilters>(getGetListingFiltersUrl(params),
   {
     ...options,
     method: 'GET'
@@ -245,23 +253,23 @@ export const getListingFilters = async ( options?: Parameters<typeof customFetch
 
 
 
-export const getGetListingFiltersQueryKey = () => {
+export const getGetListingFiltersQueryKey = (params?: GetListingFiltersParams,) => {
     return [
-    `/api/listings/filters`
+    `/api/listings/filters`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetListingFiltersQueryOptions = <TData = Awaited<ReturnType<typeof getListingFilters>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getListingFilters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetListingFiltersQueryOptions = <TData = Awaited<ReturnType<typeof getListingFilters>>, TError = ErrorType<unknown>>(params?: GetListingFiltersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getListingFilters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetListingFiltersQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetListingFiltersQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getListingFilters>>> = ({ signal }) => getListingFilters({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getListingFilters>>> = ({ signal }) => getListingFilters(params, { signal, ...requestOptions });
 
 
 
@@ -279,11 +287,11 @@ export type GetListingFiltersQueryError = ErrorType<unknown>
  */
 
 export function useGetListingFilters<TData = Awaited<ReturnType<typeof getListingFilters>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getListingFilters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetListingFiltersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getListingFilters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetListingFiltersQueryOptions(options)
+  const queryOptions = getGetListingFiltersQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -12,11 +12,9 @@ export default function Discover() {
   const [liked, setLiked, clearLiked] = useLocalStorage<Listing[]>('discover-liked', []);
   const [stage, setStage] = useState<Stage>(liked.length > 0 ? 'shortlist' : 'hero');
   const [quizParams, setQuizParams] = useState<GetListingsParams | null>(null);
-  const [quizMakes, setQuizMakes] = useState<string[]>([]);
 
-  const handleQuizComplete = (params: GetListingsParams, makes: string[] = []) => {
+  const handleQuizComplete = (params: GetListingsParams) => {
     setQuizParams(params);
-    setQuizMakes(makes);
     setStage('swipe');
   };
 
@@ -28,15 +26,16 @@ export default function Discover() {
     setLiked((prev) => prev.filter((l) => l.vin !== vin));
   };
 
-  const handleStartOver = () => {
-    clearLiked();
+  // Back to the quiz, keeping the shortlist.
+  const handleRetakeQuiz = () => {
     setQuizParams(null);
     setStage('quiz');
   };
 
-  const handleFindMore = () => {
-    setQuizParams(null);
-    setStage('quiz');
+  // Also empties the shortlist, so only the shortlist's "Start over" button uses it.
+  const handleStartOver = () => {
+    clearLiked();
+    handleRetakeQuiz();
   };
 
   if (stage === 'hero') {
@@ -51,11 +50,10 @@ export default function Discover() {
     return (
       <SwipeDeck
         params={quizParams}
-        makes={quizMakes}
         excludeVins={liked.map((l) => l.vin)}
         onLike={handleLike}
         onFinished={() => setStage('shortlist')}
-        onRestart={handleStartOver}
+        onRetakeQuiz={handleRetakeQuiz}
       />
     );
   }
@@ -64,7 +62,7 @@ export default function Discover() {
     <Shortlist
       liked={liked}
       onRemove={handleRemove}
-      onFindMore={handleFindMore}
+      onFindMore={handleRetakeQuiz}
       onStartOver={handleStartOver}
     />
   );

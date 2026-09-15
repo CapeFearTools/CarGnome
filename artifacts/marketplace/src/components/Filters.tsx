@@ -1,27 +1,29 @@
 import { useLocation, useSearch } from 'wouter';
-import { useGetListingFilters } from '@workspace/api-client-react';
+import { keepPreviousData } from '@tanstack/react-query';
+import { useGetListingFilters, getGetListingFiltersQueryKey } from '@workspace/api-client-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SlidersHorizontal, X } from 'lucide-react';
-import { useEffect, useState, useMemo } from 'react';
+import { useMemo } from 'react';
 
 export function Filters() {
   const [location, setLocation] = useLocation();
   const searchString = useSearch();
-  const { data: filters, isLoading } = useGetListingFilters();
-  
-  // Local state for responsive inputs before they hit URL
-  const [localSearch, setLocalSearch] = useState('');
-
   const currentParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const currentMake = currentParams.get('make') || '';
+  const currentModel = currentParams.get('model') || '';
 
-  useEffect(() => {
-    // Sync local search when URL changes
-    setLocalSearch(currentParams.get('q') || '');
-  }, [currentParams]);
+  // Passing the make narrows the model list to that make's models. Keep the
+  // previous options on screen while the new list loads so the panel doesn't flash.
+  const filterParams = currentMake ? { make: currentMake } : undefined;
+  const { data: filters, isLoading } = useGetListingFilters(filterParams, {
+    query: {
+      queryKey: getGetListingFiltersQueryKey(filterParams),
+      placeholderData: keepPreviousData,
+    },
+  });
 
   const updateFilter = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchString);
@@ -29,6 +31,10 @@ export function Filters() {
       params.set(key, value);
     } else {
       params.delete(key);
+    }
+    // A model belongs to a make, so changing the make clears the model.
+    if (key === 'make') {
+      params.delete('model');
     }
     // Reset offset when changing filters
     params.delete('offset');
@@ -55,13 +61,6 @@ export function Filters() {
       </Card>
     );
   }
-
-  const currentMake = currentParams.get('make') || '';
-  const currentModel = currentParams.get('model') || '';
-
-  // We could filter models based on the selected make if we had that mapping,
-  // but listing filters usually just provides distinct values across all inventory.
-  // We'll show all models or if backend supports it, it might narrow it down automatically.
 
   return (
     <Card className="border-border/60 shadow-sm sticky top-24">

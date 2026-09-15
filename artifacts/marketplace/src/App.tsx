@@ -15,7 +15,21 @@ import Home from '@/pages/Home';
 import Discover from '@/pages/Discover';
 import ListingDetail from '@/pages/ListingDetail';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Retry network hiccups and server errors, but not 4xx responses: a sold
+      // car's 404 should show "not found" right away, not after several retries.
+      retry: (failureCount, error) => {
+        const status = 'status' in error && typeof error.status === 'number' ? error.status : undefined;
+        return (status === undefined || status >= 500) && failureCount < 2;
+      },
+      // Inventory changes once a day, and refetching when the tab regains focus
+      // could reshuffle the Discover deck mid-swipe.
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 function Router() {
   return (

@@ -7,6 +7,8 @@
  */
 
 export * from './apiError';
+export * from './dealer';
+export * from './getListingFiltersParams';
 export * from './getListingsParams';
 export * from './healthStatus';
 export * from './lead';

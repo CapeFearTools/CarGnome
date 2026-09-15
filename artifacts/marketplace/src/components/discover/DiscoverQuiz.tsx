@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { Sparkles, Search, Shuffle, Check } from 'lucide-react';
 
 interface DiscoverQuizProps {
-  onComplete: (params: GetListingsParams, makes?: string[]) => void;
+  onComplete: (params: GetListingsParams) => void;
 }
 
 const PRICE_OPTIONS = [
@@ -30,7 +30,6 @@ const MILEAGE_OPTIONS = [
 ];
 
 type Answers = {
-  make?: string;
   price_max?: number;
   odometer_max?: number;
 };
@@ -48,7 +47,8 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
     const next = { ...answers, ...patch };
     setAnswers(next);
     if (step + 1 >= totalSteps) {
-      onComplete({ ...next, limit: selectedMakes.length ? 60 : 30 }, selectedMakes);
+      // The API filters by brand server-side; several makes go as one comma-separated value.
+      onComplete({ ...next, make: selectedMakes.length ? selectedMakes.join(',') : undefined });
     } else {
       setStep(step + 1);
     }
