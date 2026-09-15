@@ -11,7 +11,7 @@ export const dealersTable = pgTable("dealers", {
   postal_code: text("postal_code"),
   email: text("email"),
   phone: text("phone"),
-  created_at: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const insertDealerSchema = createInsertSchema(dealersTable).omit({

@@ -143,12 +143,10 @@ CREATE POLICY "anon_insert_leads"
 
 -- =============================================================================
 -- Done! Your tables are ready.
--- Env vars to add to your project (Project Settings → API):
+-- Env vars for the API server and import job (Project Settings → API):
 --   SUPABASE_URL              = https://<project-ref>.supabase.co
 --   SUPABASE_ANON_KEY         = <anon / public key>
 --   SUPABASE_SERVICE_ROLE_KEY = <service_role key>  ← keep this secret!
 --
--- For the Vite frontend, also add:
---   VITE_SUPABASE_URL         = same as SUPABASE_URL
---   VITE_SUPABASE_ANON_KEY    = same as SUPABASE_ANON_KEY
+-- The website talks only to the API server, so it needs no Supabase keys.
 -- =============================================================================
