@@ -1,20 +1,24 @@
 import { createServiceRoleClient } from "@workspace/supabase-client";
 import type { DealerRow, ListingRow } from "./parse.js";
+import type { ExistingListing, ImportPlan } from "./plan.js";
 
-/** Batch size for Supabase upsert calls — stay well under PostgREST limits. */
-const BATCH_SIZE = 200;
+export type DbClient = ReturnType<typeof createServiceRoleClient>;
 
-export interface UpsertResult {
+/**
+ * Rows per write. Real listings carry long descriptions and dozens of photo
+ * URLs, so keep request bodies small.
+ */
+const WRITE_BATCH_SIZE = 100;
+
+/** Rows per read; Supabase returns at most 1,000 rows per request by default. */
+const READ_PAGE_SIZE = 1000;
+
+export interface ApplyResult {
   dealersUpserted: number;
   listingsUpserted: number;
   deactivated: number;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -23,96 +27,75 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Main upsert function
-// ---------------------------------------------------------------------------
+export function connect(url: string, serviceRoleKey: string): DbClient {
+  return createServiceRoleClient(url, serviceRoleKey);
+}
 
-export async function upsertInventory(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  dealers: Map<string, DealerRow>,
-  listings: ListingRow[],
-): Promise<UpsertResult> {
-  const client = createServiceRoleClient(supabaseUrl, serviceRoleKey);
+/** Loads every listing (active or not) belonging to the given dealers, page by page. */
+export async function fetchExistingListings(client: DbClient, dealerIds: string[]): Promise<ExistingListing[]> {
+  const rows: ExistingListing[] = [];
+  if (dealerIds.length === 0) return rows;
 
-  // 1. Upsert dealers
-  const dealerRows = [...dealers.values()];
-  let dealersUpserted = 0;
-
-  for (const batch of chunk(dealerRows, BATCH_SIZE)) {
-    const { error } = await client
-      .from("dealers")
-      .upsert(batch, { onConflict: "dealer_id" });
+  for (;;) {
+    const { data, count, error } = await client
+      .from("listings")
+      .select("vin, dealer_id, status", { count: "exact" })
+      .in("dealer_id", dealerIds)
+      .order("vin")
+      .range(rows.length, rows.length + READ_PAGE_SIZE - 1);
 
     if (error) {
-      console.error("[db] Error upserting dealers:", error.message);
+      throw new Error(`Loading existing listings failed: ${error.message}`);
+    }
+
+    const page = (data ?? []) as ExistingListing[];
+    rows.push(...page);
+    if (page.length === 0 || rows.length >= (count ?? 0)) return rows;
+  }
+}
+
+/** Writes an import: dealers first (listings reference them), then listings, then deactivations. */
+export async function applyImport(
+  client: DbClient,
+  dealers: DealerRow[],
+  listings: ListingRow[],
+  plan: ImportPlan,
+): Promise<ApplyResult> {
+  for (const batch of chunk(dealers, WRITE_BATCH_SIZE)) {
+    const { error } = await client.from("dealers").upsert(batch, { onConflict: "dealer_id" });
+    if (error) {
       throw new Error(`Dealer upsert failed: ${error.message}`);
     }
-    dealersUpserted += batch.length;
   }
+  console.log(`[db] Upserted ${dealers.length} dealer(s)`);
 
-  console.log(`[db] Upserted ${dealersUpserted} dealer(s)`);
-
-  // 2. Upsert listings — include updated_at so the trigger fires correctly
+  // Stamp updated_at even when nothing else changed, as a record that the car was in today's feed.
   const now = new Date().toISOString();
-  const listingPayloads = listings.map((l) => ({ ...l, updated_at: now }));
   let listingsUpserted = 0;
-
-  for (const batch of chunk(listingPayloads, BATCH_SIZE)) {
+  for (const batch of chunk(listings, WRITE_BATCH_SIZE)) {
     const { error } = await client
       .from("listings")
-      .upsert(batch, { onConflict: "vin" });
-
+      .upsert(batch.map((listing) => ({ ...listing, updated_at: now })), { onConflict: "vin" });
     if (error) {
-      console.error("[db] Error upserting listings:", error.message);
       throw new Error(`Listings upsert failed: ${error.message}`);
     }
     listingsUpserted += batch.length;
   }
-
   console.log(`[db] Upserted ${listingsUpserted} listing(s)`);
 
-  // 3. Inactive sweep — mark listings for these dealers that are not in today's VIN set
-  const dealerIds = [...dealers.keys()];
-  const todayVins = listings.map((l) => l.vin);
   let deactivated = 0;
-
-  if (dealerIds.length > 0) {
-    // We can't do "vin NOT IN (huge list)" efficiently in one shot, so we fetch
-    // currently active VINs for these dealers and compute the diff locally.
-    const { data: activeRows, error: fetchError } = await client
+  for (const batch of chunk(plan.deactivate, WRITE_BATCH_SIZE)) {
+    const { error } = await client
       .from("listings")
-      .select("vin")
-      .eq("status", "active")
-      .in("dealer_id", dealerIds);
-
-    if (fetchError) {
-      console.error("[db] Error fetching active VINs:", fetchError.message);
-      throw new Error(`Active VIN fetch failed: ${fetchError.message}`);
+      .update({ status: "inactive", updated_at: now })
+      .in("vin", batch)
+      .eq("status", "active");
+    if (error) {
+      throw new Error(`Deactivation failed: ${error.message}`);
     }
-
-    const todayVinSet = new Set(todayVins);
-    const toDeactivate = (activeRows ?? [])
-      .map((r: { vin: string }) => r.vin)
-      .filter((vin: string) => !todayVinSet.has(vin));
-
-    if (toDeactivate.length > 0) {
-      for (const batch of chunk(toDeactivate, BATCH_SIZE)) {
-        const { error: deactError } = await client
-          .from("listings")
-          .update({ status: "inactive", updated_at: now })
-          .in("vin", batch);
-
-        if (deactError) {
-          console.error("[db] Error deactivating listings:", deactError.message);
-          throw new Error(`Deactivation failed: ${deactError.message}`);
-        }
-        deactivated += batch.length;
-      }
-    }
+    deactivated += batch.length;
   }
+  console.log(`[db] Deactivated ${deactivated} listing(s)`);
 
-  console.log(`[db] Deactivated ${deactivated} stale listing(s)`);
-
-  return { dealersUpserted, listingsUpserted, deactivated };
+  return { dealersUpserted: dealers.length, listingsUpserted, deactivated };
 }

@@ -53,8 +53,11 @@ export interface ParseResult {
   dealers: Map<string, DealerRow>; // keyed by dealer_id
   listings: ListingRow[];
   totalRows: number;
+  /** Rows that passed the used + retail filter. */
   filteredRows: number;
   droppedRows: number;
+  /** Filtered rows skipped because they have no VIN or DealerId. */
+  skippedRows: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +74,7 @@ function num(val: unknown): number | null {
   if (val === null || val === undefined) return null;
   const s = String(val).trim();
   if (s === "") return null;
-  const n = parseFloat(s.replace(/,/g, ""));
+  const n = parseFloat(s.replace(/[$,\s]/g, ""));
   return isNaN(n) ? null : n;
 }
 
@@ -80,38 +83,67 @@ function int(val: unknown): number | null {
   return n === null ? null : Math.round(n);
 }
 
+/** A money amount; zero or negative means the feed has no real price. */
+function money(val: unknown): number | null {
+  const n = num(val);
+  return n !== null && n > 0 ? n : null;
+}
+
 function bool(val: unknown): boolean {
   if (val === null || val === undefined) return false;
   const s = String(val).trim().toLowerCase();
   return s === "true" || s === "yes" || s === "1" || s === "y";
 }
 
-/** Split a photo URL list — the feed uses pipe (|) as the delimiter. */
+/** Split a photo URL list — feeds delimit with pipes (|) or commas. */
 function splitPhotos(val: unknown): string[] {
   const s = str(val);
   if (!s) return [];
-  // Support both | and , delimiters; filter out empty strings
   const delimiter = s.includes("|") ? "|" : ",";
-  return s
+  const urls = s
     .split(delimiter)
     .map((u) => u.trim())
     .filter(Boolean);
+  return [...new Set(urls)];
 }
 
-/** Normalise an ISO-ish date string or return null. */
+/**
+ * Normalises a feed date to YYYY-MM-DD, or null when it isn't a real date.
+ * An unparseable value would make Postgres reject the whole batch.
+ */
 function dateStr(val: unknown): string | null {
   const s = str(val);
   if (!s) return null;
-  // Accept YYYY-MM-DD (optionally with a trailing time component) and slice it off.
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  // Accept MM/DD/YYYY, optionally followed by a time component (e.g. "7/30/2026 1:59:46 PM"),
-  // and convert to YYYY-MM-DD, ignoring anything after the date itself.
-  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
-  if (match) {
-    const [, m, d, y] = match;
-    return `${y}-${m!.padStart(2, "0")}-${d!.padStart(2, "0")}`;
+
+  // YYYY-MM-DD, optionally followed by a time, or MM/DD/YYYY, optionally
+  // followed by a time (e.g. "7/30/2026 1:59:46 PM"). Anything after the date is ignored.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
+  const [year, month, day] = iso
+    ? [Number(iso[1]), Number(iso[2]), Number(iso[3])]
+    : us
+      ? [Number(us[3]), Number(us[1]), Number(us[2])]
+      : [NaN, NaN, NaN];
+
+  // Reject impossible dates such as 13/45/2026.
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (isNaN(date.getTime()) || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
   }
-  return s;
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Keeps used vehicles offered for retail. Feeds either spell the values out
+ * ("Used", "Retail") or send codes: New/Used is "U"/"N", Disposition is
+ * "R" (retail), "F" (fleet) or "W" (wholesale).
+ */
+function isUsedRetail(row: Record<string, unknown>): boolean {
+  const newUsed = (str(row["New/Used"]) ?? "").toLowerCase();
+  const disposition = (str(row["Disposition"]) ?? "").toLowerCase();
+  const isUsed = newUsed === "u" || newUsed === "used";
+  const isRetail = disposition === "r" || disposition.includes("retail");
+  return isUsed && isRetail;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,28 +161,19 @@ export function parseCsv(csvBuffer: Buffer): ParseResult {
   });
 
   const totalRows = rows.length;
-
-  // Filter: Used vehicles with Retail disposition.
-  // Feeds vary in format — some spell out "Used"/"Retail", others send single-letter
-  // codes ("U"/"N" and "R"/"F"/"W"). Match on the leading letter to support both.
-  const filtered = rows.filter((r) => {
-    const newUsed = (str(r["New/Used"]) ?? "").toLowerCase();
-    const disposition = (str(r["Disposition"]) ?? "").toLowerCase();
-    const isUsed = newUsed === "u" || newUsed === "used" || newUsed.startsWith("u");
-    const isRetail =
-      disposition === "r" || disposition === "retail" || disposition.startsWith("r");
-    return isUsed && isRetail;
-  });
-
+  const filtered = rows.filter(isUsedRetail);
   const droppedRows = totalRows - filtered.length;
 
   const dealers = new Map<string, DealerRow>();
   const listings: ListingRow[] = [];
+  let skippedRows = 0;
 
   for (const r of filtered) {
     const dealerId = str(r["DealerId"]);
-    if (!dealerId || !str(r["VIN"])) {
-      // Skip rows without a dealer ID or VIN — can't upsert without the key
+    const vin = str(r["VIN"]);
+    if (!dealerId || !vin) {
+      // Can't upsert without the keys
+      skippedRows += 1;
       continue;
     }
 
@@ -168,7 +191,7 @@ export function parseCsv(csvBuffer: Buffer): ParseResult {
     }
 
     listings.push({
-      vin: str(r["VIN"])!,
+      vin,
       dealer_id: dealerId,
       stock_number: str(r["Stock #"]),
       year: int(r["Year"]),
@@ -187,8 +210,8 @@ export function parseCsv(csvBuffer: Buffer): ParseResult {
       drivetrain: str(r["Drivetrain Desc"]),
       exterior_color: str(r["Colour"]),
       interior_color: str(r["Interior Color"]),
-      msrp: num(r["MSRP"]),
-      price: num(r["Price"]), // empty string → null → "Call for Price"
+      msrp: money(r["MSRP"]),
+      price: money(r["Price"]), // blank or 0 → null → "Call for Price"
       certified: bool(r["Certified"]),
       description: str(r["Description"]),
       features: str(r["Features"]),
@@ -209,5 +232,6 @@ export function parseCsv(csvBuffer: Buffer): ParseResult {
     totalRows,
     filteredRows: filtered.length,
     droppedRows,
+    skippedRows,
   };
 }

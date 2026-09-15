@@ -1,20 +1,26 @@
 # @workspace/ingestion — Inventory Import Worker
 
-Pulls the daily inventory CSV from an SFTP endpoint, filters to used retail vehicles, and upserts into the Supabase `listings` table. VINs absent from the feed are automatically marked inactive so sold cars drop off the site.
+Pulls each dealer's daily inventory CSV from SFTP, keeps the used retail vehicles, and upserts them into the Supabase `listings` table. Listings missing from a dealer's latest file are marked inactive, so sold cars drop off the site.
 
 ---
 
 ## Quick start
 
 ```bash
-# 1. Copy the env template and fill in your credentials
+# 1. Copy the env template and fill in your credentials (the script reads .env automatically)
 cp .env.example .env
 
-# 2. Run against the live SFTP feed
-pnpm --filter @workspace/ingestion run import
+# 2. Check the live SFTP feed without writing anything
+pnpm --filter @workspace/ingestion run import --dry-run
 
-# 3. Or run against the local fixture (no SFTP connection)
-pnpm --filter @workspace/ingestion run import:local
+# 3. Run the real import
+pnpm --filter @workspace/ingestion run import
+```
+
+To work offline, `import:local` reads the dealer snapshots in `fixtures/` instead of SFTP. Pair it with `--dry-run` unless you mean to load that snapshot into the database your credentials point at:
+
+```bash
+pnpm --filter @workspace/ingestion run import:local --dry-run
 ```
 
 ---
@@ -27,98 +33,60 @@ pnpm --filter @workspace/ingestion run import:local
 | `SFTP_PORT` | SFTP port (default `22`) |
 | `SFTP_USER` | SFTP username |
 | `SFTP_PASSWORD` | SFTP password |
-| `SFTP_REMOTE_PATH` | Full path to the CSV file on the SFTP server |
+| `SFTP_REMOTE_PATH` | A CSV file, a folder (every `.csv` inside is imported), or several of either separated by commas |
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase **service-role** key — bypasses RLS; never expose to browsers |
 
-See `.env.example` for the full template.
+Point `SFTP_REMOTE_PATH` at the current files only. If the vendor keeps dated copies in the same folder, list the current files explicitly, or old copies will be imported too.
+
+## Flags
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | Download, parse and compare with the database, then report what would change without writing. Without Supabase credentials it stops after parsing. |
+| `--allow-mass-deactivation` | Skip the safety check described below, for when a dealer really did remove most of its inventory. |
 
 ---
 
 ## What the script does
 
-1. **Connects to SFTP** and downloads the latest inventory CSV into memory.
-2. **Filters rows** — keeps only `New/Used === 'Used'` and `Disposition` contains `'Retail'` (case-insensitive). All new vehicles and non-retail dispositions are skipped.
-3. **Upserts dealers** — one row per unique `DealerId`, on conflict `dealer_id`.
-4. **Upserts listings** — all filtered rows, on conflict `vin`, setting `status = 'active'` and `updated_at = now()`.
-5. **Inactive sweep** — sets `status = 'inactive'` on any listing for these dealers whose VIN was not in today's feed (sold or removed vehicles).
-6. **Prints a summary** — total rows, filtered rows, upserted, deactivated.
+1. **Downloads the CSVs** from SFTP (one per store), or reads `fixtures/*.csv` with `import:local`.
+2. **Filters rows** to used retail vehicles (see below) and merges the files. A VIN that appears twice is kept once, with a warning.
+3. **Compares with the database** — which listings are new, updated, back in stock, or gone from the feed.
+4. **Upserts dealers**, one row per `DealerId`, on conflict `dealer_id`.
+5. **Upserts listings** on conflict `vin`, setting `status = 'active'` and `updated_at = now()`.
+6. **Marks listings inactive** when they belong to a dealer in today's files but are missing from its feed. A dealer with no file today keeps its listings.
+7. **Prints a summary**, and in GitHub Actions also writes it to the run's summary page.
 
-### Filtering notes
+### Filtering
 
-The `Disposition` filter matches `'Retail'` case-insensitively, so `"Retail"`, `"Retail Certified"`, `"Pre-Retail"`, etc. are all accepted. Confirm the exact values with your dealer feed vendor and adjust the `parseCsv` filter in `src/parse.ts` if needed.
+A row is imported when `New/Used` is `Used` or `U`, **and** `Disposition` is `R` or contains `Retail` (case-insensitive). New vehicles and fleet (`F`) or wholesale (`W`) dispositions are skipped. Adjust `isUsedRetail` in `src/parse.ts` if a vendor sends different codes.
+
+A zero or blank price is stored as `null`, which the site shows as "Call for Price".
+
+### Safety checks
+
+The run finishes but **exits with an error** (a red run in GitHub Actions) when something needs a person to look:
+
+- **Mass deactivation** — if a dealer would lose more than half of its active listings (and more than 10 cars) in one run, those deactivations are held back. A truncated or half-exported file looks exactly like that. The dealer's other updates still go through. If the cars really are gone, re-run with `--allow-mass-deactivation`.
+- **Stale file** — an SFTP file not updated in 72 hours, which usually means the dealer's export stopped.
+- **Empty file** — a file with no used retail listings.
 
 ---
 
 ## Scheduling
 
-### Option A — GitHub Actions (recommended)
+`.github/workflows/daily-import.yml` runs the import every day at 06:00 UTC. It can also be started from **GitHub → Actions → Daily Inventory Import → Run workflow**, with checkboxes for a dry run and for allowing mass deactivation.
 
-Add the workflow below to `.github/workflows/daily-import.yml` (already included in this repo):
+Set these as **repository secrets** (GitHub → Settings → Secrets and variables → Actions): `SFTP_HOST`, `SFTP_PORT` (optional), `SFTP_USER`, `SFTP_PASSWORD`, `SFTP_REMOTE_PATH`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 
-```yaml
-name: Daily Inventory Import
+> GitHub runs scheduled workflows from the repository's **default branch** only. Make sure that branch has the latest code.
 
-on:
-  schedule:
-    - cron: '0 6 * * *'   # 06:00 UTC every day
-  workflow_dispatch:       # allow manual trigger from GitHub UI
-
-jobs:
-  import:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @workspace/ingestion run import
-        env:
-          SFTP_HOST: ${{ secrets.SFTP_HOST }}
-          SFTP_PORT: ${{ secrets.SFTP_PORT }}
-          SFTP_USER: ${{ secrets.SFTP_USER }}
-          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
-          SFTP_REMOTE_PATH: ${{ secrets.SFTP_REMOTE_PATH }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-```
-
-Set the environment variables as **encrypted repository secrets** in GitHub → Settings → Secrets and variables → Actions.
-
-### Option B — Vercel Cron
-
-If the project is deployed on Vercel, you can trigger the import via a cron-called HTTP endpoint.
-
-1. Add a `/api/import` route to `artifacts/api-server` that calls the `runImport()` function from this package and returns `{ ok: true }`.
-2. Add `@workspace/ingestion` as a dependency of `api-server`.
-3. Add a `vercel.json` at the repository root:
-
-```json
-{
-  "crons": [
-    {
-      "path": "/api/import",
-      "schedule": "0 6 * * *"
-    }
-  ]
-}
-```
-
-4. Set all environment variables (SFTP + Supabase) in the Vercel project dashboard → Settings → Environment Variables.
-
-> **Note:** Vercel Cron is available on Pro and Enterprise plans. The GitHub Actions approach is free and simpler for most deployments.
+A good first run: trigger the workflow manually with **dry run** checked, confirm the file counts and planned changes in the run summary, then run it for real.
 
 ---
 
-## Local development with the fixture CSV
+## Sample data
 
-`fixtures/sample.csv` contains a small representative dataset with:
-
-- 5 valid used retail listings (imported)
-- 1 new vehicle row (filtered out — `New/Used = New`)
-- 1 used fleet row (filtered out — `Disposition = Fleet`)
-
-Running `pnpm --filter @workspace/ingestion run import:local` processes this file without any SFTP connection. You still need `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to write to the database, or you can add a dry-run flag to `src/index.ts` if you want fully offline testing.
+- `fixtures/` — snapshots of the Audi Cape Fear and Land Rover Cape Fear feeds, used by `import:local`.
+- `examples/sample.csv` — a small hand-made file showing the expected columns and edge cases (a new car, a fleet car, a blank price, pipe-delimited lists). It isn't imported by `import:local`.

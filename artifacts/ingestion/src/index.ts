@@ -1,125 +1,245 @@
 /**
- * @workspace/ingestion — Daily inventory import script
+ * @workspace/ingestion — Daily inventory import
  *
  * Usage:
- *   pnpm --filter @workspace/ingestion run import          # SFTP mode
- *   pnpm --filter @workspace/ingestion run import:local    # local fixture mode
+ *   pnpm --filter @workspace/ingestion run import          # SFTP → Supabase
+ *   pnpm --filter @workspace/ingestion run import:local    # fixtures/*.csv → Supabase
  *
- * All configuration is read from environment variables.
- * Copy .env.example to .env and fill in the values.
+ * Add flags after the script name, e.g. `run import --dry-run`:
+ *   --dry-run                  Download, parse and compare with the database, but write
+ *                              nothing. Without Supabase credentials it stops after parsing.
+ *   --allow-mass-deactivation  Skip the safety check that holds back deactivating more
+ *                              than half of a dealer's listings in one run.
+ *
+ * Settings come from environment variables, or artifacts/ingestion/.env for local runs
+ * (copy .env.example). The process exits with code 1 when the run fails or needs
+ * attention, so a scheduled GitHub Actions run shows up red.
  */
 
-import { loadConfig, loadLocalConfig } from "./config.js";
-import { fetchFromSftp, readLocalFixtureDir } from "./sftp.js";
+import { appendFileSync } from "node:fs";
+import { loadSftpConfig, loadSupabaseConfig } from "./config.js";
+import { fetchFromSftp, readLocalFixtureDir, type SourceFile } from "./sftp.js";
 import { parseCsv, type DealerRow, type ListingRow } from "./parse.js";
-import { upsertInventory } from "./db.js";
+import { planImport, type ImportPlan } from "./plan.js";
+import { applyImport, connect, fetchExistingListings } from "./db.js";
 
-const isLocal = process.argv.includes("--local");
+/** A source file older than this suggests the dealer's export has stopped. */
+const STALE_FILE_HOURS = 72;
 
-async function main(): Promise<void> {
+const args = process.argv.slice(2);
+const isLocal = args.includes("--local");
+const isDryRun = args.includes("--dry-run");
+const allowMassDeactivation = args.includes("--allow-mass-deactivation");
+
+interface FileSummary {
+  name: string;
+  totalRows: number;
+  usedRetailRows: number;
+  listings: number;
+}
+
+/** Appends Markdown to the GitHub Actions run summary when running there. */
+function writeStepSummary(lines: string[]): void {
+  const summaryPath = process.env["GITHUB_STEP_SUMMARY"];
+  if (!summaryPath) return;
+  try {
+    appendFileSync(summaryPath, lines.join("\n") + "\n");
+  } catch {
+    // The summary is a convenience; never fail the import over it.
+  }
+}
+
+async function main(): Promise<number> {
+  // Local runs read artifacts/ingestion/.env; in GitHub Actions the values come from secrets.
+  try {
+    process.loadEnvFile();
+  } catch {
+    // No .env file
+  }
+
   const startedAt = Date.now();
   console.log(`\n====================================================`);
-  console.log(`  AutoClassic Inventory Ingestion — ${new Date().toISOString()}`);
-  console.log(`  Mode: ${isLocal ? "LOCAL FIXTURE" : "SFTP"}`);
+  console.log(`  Drive Cape Fear Inventory Import — ${new Date().toISOString()}`);
+  console.log(`  Source: ${isLocal ? "local fixtures" : "SFTP"}${isDryRun ? " (dry run — no database writes)" : ""}`);
   console.log(`====================================================\n`);
 
-  // ── 1. Load config & source CSV(s) ──────────────────────────────────────────
-  // Each store/dealer may send its own CSV file, so we support fetching and
-  // parsing multiple files in one run and merging the results before upsert.
-  let csvBuffers: { filename: string; buffer: Buffer }[];
-  let supabaseUrl: string;
-  let supabaseServiceRoleKey: string;
+  // Check settings before downloading anything.
+  const supabaseConfig = loadSupabaseConfig(!isDryRun);
+  const sftpConfig = isLocal ? null : loadSftpConfig();
 
-  if (isLocal) {
-    const config = loadLocalConfig();
-    supabaseUrl = config.supabaseUrl;
-    supabaseServiceRoleKey = config.supabaseServiceRoleKey;
-    csvBuffers = readLocalFixtureDir();
+  // Anything a person should look at, even when the import itself went through.
+  const problems: string[] = [];
+
+  // ── 1. Source files ─────────────────────────────────────────────────────────
+  // Each store sends its own CSV, so one run can import several files.
+  let files: SourceFile[];
+  if (!sftpConfig) {
+    files = readLocalFixtureDir();
   } else {
-    const config = loadConfig();
-    supabaseUrl = config.supabaseUrl;
-    supabaseServiceRoleKey = config.supabaseServiceRoleKey;
-
-    // ── 2. Fetch CSV from SFTP ─────────────────────────────────────────────
     try {
-      const buffer = await fetchFromSftp(config.sftp);
-      csvBuffers = [{ filename: config.sftp.remotePath, buffer }];
+      files = await fetchFromSftp(sftpConfig);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`\n[error] SFTP fetch failed: ${msg}`);
-      console.error(
-        "[error] Check SFTP_HOST, SFTP_USER, SFTP_PASSWORD, SFTP_REMOTE_PATH.\n",
+      throw new Error(
+        `SFTP download failed: ${msg}\n` +
+          "Check SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASSWORD and SFTP_REMOTE_PATH.",
       );
-      process.exit(1);
     }
   }
 
-  // ── 3. Parse & filter each file, merging results ────────────────────────────
-  console.log(`[parse] Parsing ${csvBuffers.length} file(s)…`);
-  const dealers = new Map<string, DealerRow>();
-  const listings: ListingRow[] = [];
-  let totalRows = 0;
-  let filteredRows = 0;
-  let droppedRows = 0;
+  for (const file of files) {
+    if (!file.modifiedAt) continue;
+    const ageHours = (Date.now() - file.modifiedAt.getTime()) / 3_600_000;
+    if (ageHours > STALE_FILE_HOURS) {
+      problems.push(
+        `${file.name} was last updated ${Math.floor(ageHours / 24)} days ago; the dealer's export may have stopped.`,
+      );
+    }
+  }
 
-  for (const { filename, buffer } of csvBuffers) {
-    const result = parseCsv(buffer);
+  // ── 2. Parse, filter and merge ─────────────────────────────────────────────
+  console.log(`[parse] Parsing ${files.length} file(s)…`);
+  const dealers = new Map<string, DealerRow>();
+  const listingsByVin = new Map<string, { listing: ListingRow; file: string }>();
+  const fileSummaries: FileSummary[] = [];
+
+  for (const file of files) {
+    const result = parseCsv(file.buffer);
     console.log(
-      `[parse]   ${filename}: ${result.totalRows} total, ${result.filteredRows} kept, ${result.droppedRows} dropped`,
+      `[parse]   ${file.name}: ${result.totalRows} rows, ${result.filteredRows} used retail, ${result.listings.length} importable`,
     );
+    fileSummaries.push({
+      name: file.name,
+      totalRows: result.totalRows,
+      usedRetailRows: result.filteredRows,
+      listings: result.listings.length,
+    });
+
+    if (result.skippedRows > 0) {
+      console.warn(`[warn]    ${file.name}: skipped ${result.skippedRows} row(s) with no VIN or DealerId`);
+    }
+    if (result.listings.length === 0) {
+      problems.push(`${file.name} has no used retail listings; check the file and the filter in src/parse.ts.`);
+    }
+
     for (const [dealerId, dealer] of result.dealers) {
       dealers.set(dealerId, dealer);
     }
-    listings.push(...result.listings);
-    totalRows += result.totalRows;
-    filteredRows += result.filteredRows;
-    droppedRows += result.droppedRows;
+    for (const listing of result.listings) {
+      const previous = listingsByVin.get(listing.vin);
+      if (previous) {
+        // The same VIN twice in one upsert batch fails the whole batch, so keep one copy.
+        console.warn(
+          `[warn]    VIN ${listing.vin} appears more than once (${previous.file}, ${file.name}); keeping the copy from ${file.name}`,
+        );
+      }
+      listingsByVin.set(listing.vin, { listing, file: file.name });
+    }
   }
 
-  console.log(`[parse] Total rows in CSV  : ${totalRows.toLocaleString()}`);
-  console.log(`[parse] Rows after filter  : ${filteredRows.toLocaleString()}`);
-  console.log(`[parse] Dropped (non-retail): ${droppedRows.toLocaleString()}`);
-  console.log(`[parse] Unique dealers     : ${dealers.size}`);
-  console.log(`[parse] Listings to upsert : ${listings.length.toLocaleString()}`);
+  const listings = [...listingsByVin.values()].map((entry) => entry.listing);
+  console.log(`[parse] Dealers  : ${dealers.size}`);
+  console.log(`[parse] Listings : ${listings.length.toLocaleString()}`);
+
+  // ── 3. Compare with the database, then write ───────────────────────────────
+  let plan: ImportPlan | null = null;
 
   if (listings.length === 0) {
-    console.warn(
-      "\n[warn] No listings to upsert — check the filter criteria " +
-        "(New/Used === 'Used' and Disposition contains 'Retail').\n",
-    );
-    process.exit(0);
+    problems.push("Nothing to import: no file had used retail listings.");
+  } else if (!supabaseConfig) {
+    console.log("\n[db] No Supabase credentials; the dry run stops before comparing with the database.");
+  } else {
+    try {
+      const client = connect(supabaseConfig.url, supabaseConfig.serviceRoleKey);
+      const dealerIds = [...new Set(listings.map((listing) => listing.dealer_id))];
+      const existing = await fetchExistingListings(client, dealerIds);
+      plan = planImport(existing, listings, { allowMassDeactivation });
+
+      for (const dealer of plan.dealers) {
+        console.log(
+          `[plan] ${dealer.dealerId}: ${dealer.incoming} in feed, ${dealer.activeBefore} active before, ` +
+            `${dealer.toDeactivate.length} to deactivate${dealer.blocked ? " (held back)" : ""}`,
+        );
+        if (dealer.blocked) {
+          problems.push(
+            `Held back deactivating ${dealer.toDeactivate.length} of ${dealer.activeBefore} active listings for ${dealer.dealerId}. ` +
+              "Losing more than half of a dealer's cars in one run usually means an incomplete feed. " +
+              "If those cars really are gone, re-run with --allow-mass-deactivation.",
+          );
+        }
+      }
+
+      if (!isDryRun) {
+        await applyImport(client, [...dealers.values()], listings, plan);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Database step failed: ${msg}\n` +
+          "For connection or permission errors, check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+      );
+    }
   }
 
-  // ── 4. Upsert to Supabase ──────────────────────────────────────────────────
-  console.log("\n[db] Connecting to Supabase…");
-  let result;
-  try {
-    result = await upsertInventory(
-      supabaseUrl,
-      supabaseServiceRoleKey,
-      dealers,
-      listings,
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`\n[error] Database operation failed: ${msg}`);
-    console.error(
-      "[error] Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.\n",
-    );
-    process.exit(1);
-  }
-
-  // ── 5. Summary ─────────────────────────────────────────────────────────────
+  // ── 4. Report ──────────────────────────────────────────────────────────────
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+  const deactivatedLabel = isDryRun ? "Would deactivate" : "Deactivated";
+
   console.log(`\n====================================================`);
-  console.log(`  Import complete in ${elapsed}s`);
-  console.log(`  Dealers upserted : ${result.dealersUpserted}`);
-  console.log(`  Listings upserted: ${result.listingsUpserted}`);
-  console.log(`  Deactivated      : ${result.deactivated}`);
+  console.log(`  ${isDryRun ? "Dry run" : "Import"} finished in ${elapsed}s`);
+  console.log(`  Dealers          : ${dealers.size}`);
+  console.log(`  Listings in feed : ${listings.length}`);
+  if (plan) {
+    console.log(`  New              : ${plan.newCount}`);
+    console.log(`  Updated          : ${plan.updatedCount}`);
+    console.log(`  Reactivated      : ${plan.reactivatedCount}`);
+    console.log(`  ${deactivatedLabel.padEnd(17)}: ${plan.deactivate.length}`);
+  }
   console.log(`====================================================\n`);
+  for (const problem of problems) {
+    console.warn(`[attention] ${problem}`);
+  }
+
+  const summary = [
+    `## Inventory import${isDryRun ? " (dry run)" : ""}`,
+    "",
+    "| File | Rows | Used retail | Listings |",
+    "| --- | ---: | ---: | ---: |",
+    ...fileSummaries.map((f) => `| ${f.name} | ${f.totalRows} | ${f.usedRetailRows} | ${f.listings} |`),
+    "",
+  ];
+  if (plan) {
+    summary.push(
+      "| Change | Listings |",
+      "| --- | ---: |",
+      `| New | ${plan.newCount} |`,
+      `| Updated | ${plan.updatedCount} |`,
+      `| Reactivated | ${plan.reactivatedCount} |`,
+      `| ${deactivatedLabel} | ${plan.deactivate.length} |`,
+      "",
+    );
+  } else if (listings.length > 0) {
+    summary.push("_Stopped before comparing with the database (no Supabase credentials)._", "");
+  }
+  if (problems.length > 0) {
+    summary.push("### Needs attention", "", ...problems.map((problem) => `- ${problem}`), "");
+  }
+  writeStepSummary(summary);
+
+  return problems.length > 0 ? 1 : 0;
 }
 
-main().catch((err) => {
-  console.error("[fatal]", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+function finish(exitCode: number): void {
+  process.exitCode = exitCode;
+  // Exit anyway if an open connection keeps Node running after the work is done.
+  setTimeout(() => process.exit(exitCode), 10_000).unref();
+}
+
+main()
+  .then(finish)
+  .catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`\n[error] ${message}\n`);
+    writeStepSummary(["## Inventory import failed", "", "```", message, "```"]);
+    finish(1);
+  });
