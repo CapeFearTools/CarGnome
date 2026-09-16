@@ -7,20 +7,35 @@ import { SwipeCard, type SwipeDirection } from './SwipeCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { X, Heart, RotateCcw } from 'lucide-react';
+import { SavedShortlistSheet } from './SavedShortlistSheet';
 
 interface SwipeDeckProps {
   params: GetListingsParams;
   excludeVins: string[];
+  /** Cars saved so far, shown behind the "N saved" chip. */
+  liked: Listing[];
   onLike: (listing: Listing) => void;
+  onRemoveLiked: (vin: string) => void;
   onFinished: () => void;
   onRetakeQuiz: () => void;
+  /** Leave the deck and open the full shortlist page. */
+  onSeeShortlist: () => void;
 }
 
 const PAGE_SIZE = 20;
 /** Load the next page once this few cards are left, so the deck doesn't run dry mid-swipe. */
 const PRELOAD_WHEN_REMAINING = 5;
 
-export function SwipeDeck({ params, excludeVins, onLike, onFinished, onRetakeQuiz }: SwipeDeckProps) {
+export function SwipeDeck({
+  params,
+  excludeVins,
+  liked,
+  onLike,
+  onRemoveLiked,
+  onFinished,
+  onRetakeQuiz,
+  onSeeShortlist,
+}: SwipeDeckProps) {
   // Use the shortlist as it was when the deck opened. Liking a car adds it to
   // excludeVins, and filtering on the live list would pull that card out from
   // under the current index, silently skipping the next car.
@@ -151,9 +166,12 @@ export function SwipeDeck({ params, excludeVins, onLike, onFinished, onRetakeQui
 
   return (
     <div className="flex flex-col items-center py-8 md:py-12 px-4">
-      <p className="text-sm text-muted-foreground mb-4">
-        {matchCount - index} of {matchCount} matches
-      </p>
+      <div className="w-full max-w-sm flex items-center justify-between gap-3 mb-4">
+        <p className="text-sm text-muted-foreground">
+          {matchCount - index} of {matchCount} matches
+        </p>
+        <SavedShortlistSheet liked={liked} onRemove={onRemoveLiked} onSeeShortlist={onSeeShortlist} />
+      </div>
       <div className="relative w-full max-w-sm h-[520px]">
         <AnimatePresence custom={exitDirection}>
           {visible.map((listing, i) => (
@@ -186,6 +204,10 @@ export function SwipeDeck({ params, excludeVins, onLike, onFinished, onRetakeQui
           <Heart size={24} fill="currentColor" />
         </Button>
       </div>
+
+      <Button variant="ghost" className="mt-6 text-muted-foreground" onClick={onSeeShortlist}>
+        Done for now
+      </Button>
     </div>
   );
 }

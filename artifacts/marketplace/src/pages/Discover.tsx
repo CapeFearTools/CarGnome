@@ -43,7 +43,13 @@ export default function Discover() {
   }
 
   if (stage === 'quiz') {
-    return <DiscoverQuiz onComplete={handleQuizComplete} />;
+    return (
+      <DiscoverQuiz
+        onComplete={handleQuizComplete}
+        savedCount={liked.length}
+        onSeeShortlist={() => setStage('shortlist')}
+      />
+    );
   }
 
   if (stage === 'swipe' && quizParams) {
@@ -51,9 +57,12 @@ export default function Discover() {
       <SwipeDeck
         params={quizParams}
         excludeVins={liked.map((l) => l.vin)}
+        liked={liked}
         onLike={handleLike}
+        onRemoveLiked={handleRemove}
         onFinished={() => setStage('shortlist')}
         onRetakeQuiz={handleRetakeQuiz}
+        onSeeShortlist={() => setStage('shortlist')}
       />
     );
   }

@@ -38,3 +38,13 @@ export function safeExternalUrl(url: string | null | undefined): string | null {
     return null;
   }
 }
+
+/** Formats a listing's price, or "Call for Price" when the feed has none. */
+export function formatPrice(price: number | null | undefined): string {
+  if (price === null || price === undefined) return 'Call for Price';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(price);
+}

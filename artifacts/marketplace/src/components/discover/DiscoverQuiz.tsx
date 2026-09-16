@@ -6,10 +6,13 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Sparkles, Search, Shuffle, Check } from 'lucide-react';
+import { Sparkles, Search, Shuffle, Check, Heart } from 'lucide-react';
 
 interface DiscoverQuizProps {
   onComplete: (params: GetListingsParams) => void;
+  /** Cars already saved, so someone retaking the quiz can get back to them. */
+  savedCount?: number;
+  onSeeShortlist?: () => void;
 }
 
 const PRICE_OPTIONS = [
@@ -34,7 +37,7 @@ type Answers = {
   odometer_max?: number;
 };
 
-export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
+export function DiscoverQuiz({ onComplete, savedCount = 0, onSeeShortlist }: DiscoverQuizProps) {
   const { data: filters, isLoading } = useGetListingFilters();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Answers>({});
@@ -84,7 +87,20 @@ export function DiscoverQuiz({ onComplete }: DiscoverQuizProps) {
         Answer a few quick questions, then swipe to build your shortlist.
       </p>
 
-      <Progress value={((step + 1) / totalSteps) * 100} className="mb-10 w-full max-w-xs" />
+      <Progress
+        value={((step + 1) / totalSteps) * 100}
+        className={cn('w-full max-w-xs', savedCount > 0 ? 'mb-4' : 'mb-10')}
+      />
+
+      {savedCount > 0 && onSeeShortlist && (
+        <button
+          onClick={onSeeShortlist}
+          className="mb-8 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          <Heart size={14} fill="currentColor" />
+          {savedCount} saved — view shortlist
+        </button>
+      )}
 
       {currentStep === 'make' && (
         <BrandStep
