@@ -14,6 +14,8 @@ import { Layout } from '@/components/Layout';
 import Home from '@/pages/Home';
 import Discover from '@/pages/Discover';
 import ListingDetail from '@/pages/ListingDetail';
+import Privacy from '@/pages/Privacy';
+import Terms from '@/pages/Terms';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +41,8 @@ function Router() {
           <Route path="/" component={Discover} />
           <Route path="/browse" component={Home} />
           <Route path="/listings/:vin" component={ListingDetail} />
+          <Route path="/privacy" component={Privacy} />
+          <Route path="/terms" component={Terms} />
           <Route component={NotFound} />
         </Switch>
       </Layout>

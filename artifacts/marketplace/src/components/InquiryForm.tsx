@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Link } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCreateLead } from '@workspace/api-client-react';
@@ -187,6 +188,13 @@ export function InquiryForm({ vin, defaultMessage, leadType = 'inquiry', onSucce
             </>
           )}
         </Button>
+        <p className="text-xs text-muted-foreground text-center">
+          By sending this, you're asking the dealership to contact you about this vehicle. See our{' '}
+          <Link href="/privacy" className="underline hover:text-foreground">
+            Privacy Policy
+          </Link>
+          .
+        </p>
         {submitError && (
           <p role="alert" className="text-sm text-destructive text-center">
             {submitError}
