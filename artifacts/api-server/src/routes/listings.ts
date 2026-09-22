@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getAnonClient } from "@workspace/supabase-client";
+import { cached } from "../lib/cache";
 import {
   GetListingsQueryParams,
   GetListingParams,
@@ -17,6 +18,19 @@ const MAX_PAGE_SIZE = 100;
 
 /** Supabase returns at most 1,000 rows per request by default. */
 const FETCH_BATCH_SIZE = 1000;
+
+/**
+ * How long the filters/stats endpoints reuse one inventory scan.
+ *
+ * Both endpoints aggregate over every active listing, so without this each
+ * page load costs a full walk of the table. Inventory only changes when the
+ * overnight import runs, so a few minutes of staleness is invisible to
+ * shoppers.
+ */
+const INVENTORY_CACHE_MS = 5 * 60 * 1000;
+
+/** Seconds browsers and CDNs may reuse a filters/stats response. */
+const INVENTORY_CACHE_SECONDS = 60;
 
 /** The columns the filters and stats endpoints aggregate over. */
 interface InventoryRow {
@@ -54,6 +68,9 @@ function maxOf(values: number[]): number | null {
 /**
  * Loads the aggregate columns for every active listing, paging past the
  * per-request row cap so filters and stats cover the whole inventory.
+ *
+ * Call `getActiveInventory` instead of this — the rows are shared between
+ * requests, so treat them as read-only.
  */
 async function fetchActiveInventory(): Promise<InventoryRow[]> {
   const client = getAnonClient();
@@ -75,6 +92,9 @@ async function fetchActiveInventory(): Promise<InventoryRow[]> {
   }
 }
 
+/** The shared, briefly cached inventory snapshot behind filters and stats. */
+const getActiveInventory = cached(INVENTORY_CACHE_MS, fetchActiveInventory);
+
 // GET /listings/filters — must be registered BEFORE /listings/:vin
 router.get("/listings/filters", async (req, res): Promise<void> => {
   const parsed = GetListingFiltersQueryParams.safeParse(req.query);
@@ -85,7 +105,7 @@ router.get("/listings/filters", async (req, res): Promise<void> => {
 
   let rows: InventoryRow[];
   try {
-    rows = await fetchActiveInventory();
+    rows = await getActiveInventory();
   } catch (err) {
     req.log.error({ err }, "Failed to fetch listing filters");
     res.status(500).json({ error: "Failed to fetch filters" });
@@ -111,6 +131,7 @@ router.get("/listings/filters", async (req, res): Promise<void> => {
     odometer_max: maxOf(odometers),
   });
 
+  res.setHeader("Cache-Control", `public, max-age=${INVENTORY_CACHE_SECONDS}`);
   res.json(filters);
 });
 
@@ -118,7 +139,7 @@ router.get("/listings/filters", async (req, res): Promise<void> => {
 router.get("/listings/stats", async (req, res): Promise<void> => {
   let rows: InventoryRow[];
   try {
-    rows = await fetchActiveInventory();
+    rows = await getActiveInventory();
   } catch (err) {
     req.log.error({ err }, "Failed to fetch listing stats");
     res.status(500).json({ error: "Failed to fetch stats" });
@@ -136,6 +157,7 @@ router.get("/listings/stats", async (req, res): Promise<void> => {
     makes_count: distinctSorted(rows.map((r) => r.make)).length,
   });
 
+  res.setHeader("Cache-Control", `public, max-age=${INVENTORY_CACHE_SECONDS}`);
   res.json(stats);
 });
 
