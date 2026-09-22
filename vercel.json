@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @workspace/marketplace run build",
+  "outputDirectory": "artifacts/marketplace/dist/public",
+  "functions": {
+    "api/index.ts": {
+      "runtime": "@vercel/node@5.3.28"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
