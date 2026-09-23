@@ -29,8 +29,21 @@ const FETCH_BATCH_SIZE = 1000;
  */
 const INVENTORY_CACHE_MS = 5 * 60 * 1000;
 
-/** Seconds browsers and CDNs may reuse a filters/stats response. */
-const INVENTORY_CACHE_SECONDS = 60;
+/**
+ * Edge caching for the read-only listing endpoints.
+ *
+ * `s-maxage` is what Vercel's CDN honours — plain `max-age` only reaches the
+ * visitor's browser, which does nothing for someone arriving for the first
+ * time. `stale-while-revalidate` lets the edge answer instantly from a slightly
+ * stale copy while it refreshes behind the scenes, so no visitor waits on a
+ * cold function start plus a full inventory scan.
+ *
+ * Inventory changes once a day, when the overnight import runs.
+ */
+const FILTERS_CACHE = "public, s-maxage=300, stale-while-revalidate=600";
+
+/** Listings vary by query string, so they are cached briefly rather than long. */
+const LISTINGS_CACHE = "public, s-maxage=60, stale-while-revalidate=300";
 
 /** The columns the filters and stats endpoints aggregate over. */
 interface InventoryRow {
@@ -131,7 +144,7 @@ router.get("/listings/filters", async (req, res): Promise<void> => {
     odometer_max: maxOf(odometers),
   });
 
-  res.setHeader("Cache-Control", `public, max-age=${INVENTORY_CACHE_SECONDS}`);
+  res.setHeader("Cache-Control", FILTERS_CACHE);
   res.json(filters);
 });
 
@@ -157,7 +170,7 @@ router.get("/listings/stats", async (req, res): Promise<void> => {
     makes_count: distinctSorted(rows.map((r) => r.make)).length,
   });
 
-  res.setHeader("Cache-Control", `public, max-age=${INVENTORY_CACHE_SECONDS}`);
+  res.setHeader("Cache-Control", FILTERS_CACHE);
   res.json(stats);
 });
 
@@ -209,6 +222,7 @@ router.get("/listings", async (req, res): Promise<void> => {
     offset,
   });
 
+  res.setHeader("Cache-Control", LISTINGS_CACHE);
   res.json(response);
 });
 
@@ -256,6 +270,7 @@ router.get("/listings/:vin", async (req, res): Promise<void> => {
     dealer = dealerRow ?? undefined;
   }
 
+  res.setHeader("Cache-Control", LISTINGS_CACHE);
   res.json(GetListingResponse.parse({ ...listing, dealer }));
 });
 
