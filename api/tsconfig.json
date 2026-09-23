@@ -1,0 +1,14 @@
+{
+  // Vercel compiles this function with its own defaults (node16 resolution,
+  // no interop), which don't match how the rest of the repo is written. It
+  // reads the tsconfig nearest the function, so this pins the same settings
+  // the API server itself is built with.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"]
+}
